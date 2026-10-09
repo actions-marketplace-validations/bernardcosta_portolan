@@ -1,0 +1,10 @@
+{
+  "name": "spriggs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "portolan": "./src/cli.ts"
+  },
+  "dependencies": {}
+}
