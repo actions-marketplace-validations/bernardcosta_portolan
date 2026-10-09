@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
+import { GitHubForge } from "./forge/github";
+import { LocalForge } from "./forge/local";
+import { run } from "./run";
 
 const USAGE = `Usage: portolan spriggs run [--local --base <ref>] [--model <provider/model>]`;
 
-function main(argv: string[]): number {
+async function main(argv: string[]): Promise<number> {
   // `portolan spriggs run ...` from the bin, `bun run spriggs run ...` from the root script.
   const [command, ...rest] = argv[0] === "spriggs" ? argv.slice(1) : argv;
   if (command !== "run") {
@@ -22,11 +25,14 @@ function main(argv: string[]): number {
     console.error("--local needs --base <ref>");
     return 2;
   }
-  // M1 adds the pipeline here: context -> gate -> comment -> label.
-  console.log(
-    `spriggs run: local=${values.local} base=${values.base ?? "-"} model=${values.model ?? "-"}`,
-  );
-  return 0;
+  const forge = values.local && values.base ? new LocalForge(values.base) : new GitHubForge();
+  return run(forge);
 }
 
-process.exit(main(process.argv.slice(2)));
+main(process.argv.slice(2)).then(
+  (code) => process.exit(code),
+  (err: unknown) => {
+    console.error(`spriggs: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  },
+);
