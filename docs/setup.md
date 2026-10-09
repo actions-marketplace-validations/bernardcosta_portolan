@@ -1,35 +1,29 @@
 ---
-summary: Get a working copy running. Everything runs inside Docker; nothing is installed on the host.
+summary: Get a working copy running with Bun on the host. No Docker.
 ---
 
 # Setup
 
 ## Requirements
 
-- Docker with Compose v2.
-- `make`.
+- Bun 1.3.11. The `packageManager` field in `package.json` pins it. On macOS: `brew install oven-sh/bun/bun`.
 - Git.
-
-Do not install Bun or Node on the host. The container has them.
 
 ## Steps
 
 1. Clone the repo.
 2. Copy `.env.example` to `.env`. Add one provider key and `SPRIGGS_MODEL`. `.env` is gitignored.
-3. Build the image: `make build`.
-4. Install dependencies: `make install`.
-5. Run the checks: `make check`. This runs Biome (lint and format) and `tsc`.
+3. Install dependencies: `bun install`.
+4. Run the checks: `bun run check` and `bun run typecheck`. This runs Biome (lint and format) and `tsc`.
 
 ## Commands
 
 | Command | Does |
 | --- | --- |
-| `make check` | Lint, format check and typecheck |
-| `make fix` | Apply Biome fixes |
-| `make spriggs-local BASE=<ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
-| `make sh` | A shell in the container |
-
-Any other command: `docker compose run --rm dev <command>`.
+| `bun run check` | Lint and format check |
+| `bun run typecheck` | Typecheck |
+| `bun run fix` | Apply Biome fixes |
+| `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
 
 ## Layout
 

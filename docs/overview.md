@@ -18,7 +18,7 @@ Early development. Spriggs is built first and runs on this repo's own pull reque
 
 ## How to call it
 
-Local run inside Docker: `make spriggs-local BASE=<ref>`. In CI: the `spriggs.yml` workflow runs `portolan spriggs run` on each pull request. See [setup.md](setup.md).
+Local run: `bun run spriggs run --local --base <ref>`. In CI: the `spriggs.yml` workflow runs `portolan spriggs run` on each pull request. See [setup.md](setup.md).
 
 ## Owner
 
