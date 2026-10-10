@@ -1,4 +1,4 @@
-import type { ForgeContext } from "../context";
+import { DEFAULT_IDENTITY, type ForgeContext } from "../context";
 import { changedFiles, commitInfo, commitMessages, git, untrackedFiles } from "../git";
 import type { Forge, Label, PushResult, RunMarker, StatusState } from "./types";
 
@@ -32,6 +32,8 @@ export class LocalForge implements Forge {
           }
         : {}),
       commits: commitMessages(mergeBase, "HEAD", this.cwd),
+      self: DEFAULT_IDENTITY,
+      selfEmails: [DEFAULT_IDENTITY.email],
       // No second revision: the diff includes uncommitted changes in the working tree.
       files: [...changedFiles([mergeBase], this.cwd), ...(await untrackedFiles(this.cwd))],
       diffRevisions: [mergeBase],
