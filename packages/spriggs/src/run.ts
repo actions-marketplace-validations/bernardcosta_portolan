@@ -47,7 +47,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
 
   const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
   const report = async (label: Label, status: [StatusState, string], runReport?: RunReport) => {
-    await forge.upsertComment(renderComment(s, verdict, runReport, staleCommits), marker);
+    await forge.upsertComment(renderComment(s, verdict, label, runReport, staleCommits), marker);
     await forge.setLabel(label);
     await forge.setStatus(...status);
     return 0;

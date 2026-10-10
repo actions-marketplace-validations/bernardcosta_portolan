@@ -1,4 +1,5 @@
 import type { Usage } from "./agent/providers/types";
+import type { Label } from "./forge/types";
 import type { Verdict } from "./gate/decide";
 import { SIZE_CAP_LINES } from "./gate/decide";
 import type { Signals } from "./gate/signals";
@@ -7,18 +8,26 @@ import type { Signals } from "./gate/signals";
 
 const n = (x: number) => x.toLocaleString("en-US");
 
-export function verdictLine(v: Verdict, s: Signals): string {
+/** The first line of the comment: the label people see, then what it means for this change. */
+export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport): string {
   const size = `${n(s.linesChanged)} lines in ${n(s.filesChanged)} files`;
-  switch (v.outcome) {
-    case "proceed":
-      return `**Gate: go.** The description says why, and the change is small enough to check in full (${size}).`;
-    case "partial":
-      return v.reason === "diff-too-large"
-        ? `**Gate: partial.** The description says why, but this change is big (${size}; I check up to ${n(SIZE_CAP_LINES)} lines in full). I checked the public surface only: overview, setup, API and config. I left the rest alone.`
-        : "**Gate: partial.** The change is small enough, but the description does not say why it is made. I updated what the code shows and did not guess the intent. Add a **Why** section to the description and I will run again.";
-    case "abstain":
-      return `**Gate: stopped.** The description does not say why, and the change is too big to check without that (${size}). Add a **Why** section, or split the change, and I will run again.`;
+  if (run?.kind === "failed") {
+    return `**docs:needs-input** — I could not update the docs. ${run.reason} I committed nothing. Fix the cause and push, or edit the description, and I will run again.`;
   }
+  if (v.outcome === "abstain") {
+    return `**docs:needs-input** — I did not update the docs. The description does not say why this change is made, and the change is too big to check without that (${size}). Add a **Why** section, or split the change, and I will run again.`;
+  }
+  if (v.outcome === "partial") {
+    return v.reason === "diff-too-large"
+      ? `**docs:partial** — I checked only part of this change. It is big (${size}; I check up to ${n(SIZE_CAP_LINES)} lines in full), so I looked at the public surface only: overview, setup, API and config.`
+      : "**docs:partial** — I checked only part of this change. The description does not say why it is made, so I updated what the code shows and did not guess the intent. Add a **Why** section to the description and I will run again.";
+  }
+  if (label === "docs:none") {
+    return "**docs:none** — I checked this whole change. The docs already match it, and it needs no entry in the change feed.";
+  }
+  return run?.kind === "docs" && run.written.length === 0
+    ? `**docs:done** — I checked this whole change (${size}). The docs already matched it; I wrote the change entry.`
+    : `**docs:done** — I checked this whole change (${size}) and the docs now match it.`;
 }
 
 /** The one-line form for the commit status: 140 characters max, no markdown. */
@@ -53,6 +62,7 @@ export type RunReport =
 export function renderComment(
   s: Signals,
   v: Verdict,
+  label: Label,
   run?: RunReport,
   staleCommits?: number,
 ): string {
@@ -76,7 +86,7 @@ export function renderComment(
     "",
     "I read this pull request and checked whether `docs/` still matches the code. Here is what I found.",
     "",
-    verdictLine(v, s),
+    leadLine(label, v, s, run),
     "",
     ...(staleCommits
       ? [
@@ -100,32 +110,26 @@ function renderRun(run: RunReport): string[] {
     u
       ? `_${model ?? "model"} · ${n(u.input)} input tokens (${n(u.cached)} from cache) · ${n(u.output)} output tokens${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}_`
       : "";
+  const note =
+    run.kind === "failed" ? [] : run.notes ? [`A note from the run: ${run.notes}`, ""] : [];
   switch (run.kind) {
     case "docs":
       return [
-        run.written.length
-          ? "**I updated the docs.** The `docs:` commit on this branch has these changes:"
-          : "**The docs already match.** I only wrote the change entry:",
-        "",
-        ...run.written.map((p) => `- \`${p}\``),
-        ...(run.entry ? [`- \`${run.entry}\` (the change entry)`] : []),
-        ...(run.notes ? ["", `A note from the run: ${run.notes}`] : []),
-        "",
+        ...(run.written.length || run.entry
+          ? [
+              "The `docs:` commit on this branch has these changes:",
+              "",
+              ...run.written.map((p) => `- \`${p}\``),
+              ...(run.entry ? [`- \`${run.entry}\` (the change entry)`] : []),
+              "",
+            ]
+          : []),
+        ...note,
         usage(run.usage, run.model, run.turns),
       ];
     case "none":
-      return [
-        "**Nothing to change.** The docs already match this change, and it needs no entry in the change feed.",
-        ...(run.notes ? ["", `A note from the run: ${run.notes}`] : []),
-        "",
-        usage(run.usage, run.model, run.turns),
-      ];
+      return [...note, usage(run.usage, run.model, run.turns)];
     case "failed":
-      return [
-        `**I could not update the docs.** ${run.reason}`,
-        "",
-        "I committed nothing. Fix the cause and push, or edit the description, and I will run again.",
-        ...(run.usage ? ["", usage(run.usage, run.model)] : []),
-      ];
+      return run.usage ? [usage(run.usage, run.model)] : [];
   }
 }
