@@ -10,7 +10,7 @@ import { type Entry, renderEntry, writeEntry } from "./entry/writer";
 import type { Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { signals } from "./gate/signals";
-import { git } from "./git";
+import { diffByFile } from "./git";
 import { type RunReport, renderComment, verdictLine } from "./report";
 
 export type RunOptions = { cwd?: string; model?: string };
@@ -58,7 +58,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     });
   }
 
-  const rt = createRuntime(cwd);
+  const changedPaths = ctx.files.map((f) => f.path);
+  const rt = createRuntime(cwd, diffByFile(ctx.diffRevisions, cwd), changedPaths);
   const fail = async (reason: string, extra: { usage?: Usage } = {}) => {
     await revertWrites(rt);
     console.error(`failed: ${reason}`);
@@ -73,24 +74,13 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   const index = await docsIndex(cwd);
   let agent: Awaited<ReturnType<typeof runAgent>>;
   try {
-    const changedPaths = ctx.files.map((f) => f.path);
     const userMessage = buildUserMessage({
       signals: s,
       verdict,
       title: ctx.pr?.title ?? ctx.head.subject,
       body: ctx.pr?.body ?? "",
-      diff: git(
-        [
-          "diff",
-          ...ctx.diffRevisions,
-          "--",
-          ".",
-          ":(exclude)*.lock",
-          ":(exclude)package-lock.json",
-        ],
-        cwd,
-      ),
-      changedPaths,
+      files: ctx.files,
+      diffs: rt.diffs,
       index,
       affected: affectedDocs(index, changedPaths),
     });
@@ -130,7 +120,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
         console.log(
           `\n--- entry (not written in --local mode) ---\n${renderEntry(entry)}--- end entry ---`,
         );
-        entryPath = "(printed)";
+        entryPath = "(printed above; written only in CI)";
       }
     } catch (e) {
       return fail(`Could not write the change entry: ${(e as Error).message}`, { usage });
@@ -151,7 +141,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   const runReport: RunReport = {
     kind: "docs",
     written: check.written,
-    ...(entryPath && entryPath !== "(printed)" ? { entry: entryPath } : {}),
+    ...(entryPath ? { entry: entryPath } : {}),
     ...base,
   };
   return report(label, ["success", verdictLine(verdict, s).replace(/\*\*/g, "")], runReport);

@@ -20,7 +20,7 @@ export async function runAgent(opts: {
 }): Promise<{ result: FinishResult; usage: Usage; turns: number }> {
   const budget = opts.budget ?? DEFAULT_BUDGET;
   const started = Date.now();
-  const usage: Usage = { input: 0, output: 0 };
+  const usage: Usage = { input: 0, output: 0, cached: 0 };
   const turns: Turn[] = [{ role: "user", text: opts.userMessage }];
   let nudged = false;
 
@@ -38,6 +38,7 @@ export async function runAgent(opts: {
     });
     usage.input += c.usage.input;
     usage.output += c.usage.output;
+    usage.cached += c.usage.cached;
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
     console.log(
       `turn ${turn}: ${c.calls.map((x) => x.name).join(", ") || `no tool call (${c.stop})`}`,

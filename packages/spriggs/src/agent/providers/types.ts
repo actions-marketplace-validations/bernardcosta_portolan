@@ -15,7 +15,8 @@ export type Turn =
   | { role: "assistant"; text: string; calls: ToolCall[]; raw: unknown }
   | { role: "tool"; results: { id: string; content: string; isError: boolean }[] };
 
-export type Usage = { input: number; output: number };
+/** `cached` is the part of `input` served from the provider's prompt cache. */
+export type Usage = { input: number; output: number; cached: number };
 
 export type Completion = {
   text: string;

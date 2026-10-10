@@ -68,12 +68,14 @@ export function renderComment(s: Signals, v: Verdict, run?: RunReport): string {
 function renderRun(run: RunReport): string[] {
   const usage = (u: Usage | undefined, model: string | undefined, turns?: number) =>
     u
-      ? `_${model ?? "model"}: ${u.input.toLocaleString()} input + ${u.output.toLocaleString()} output tokens${turns ? `, ${turns} turns` : ""}._`
+      ? `_${model ?? "model"}: ${u.input.toLocaleString()} input (${u.cached.toLocaleString()} cached) + ${u.output.toLocaleString()} output tokens${turns ? `, ${turns} turns` : ""}._`
       : "";
   switch (run.kind) {
     case "docs":
       return [
-        "**Docs updated.** Review the `docs:` commit on this branch.",
+        run.written.length
+          ? "**Docs updated.** Review the `docs:` commit on this branch."
+          : "**No doc edits needed.** Only the change entry was written.",
         "",
         ...run.written.map((p) => `- \`${p}\``),
         ...(run.entry ? [`- \`${run.entry}\` (change entry)`] : []),

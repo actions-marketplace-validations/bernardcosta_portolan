@@ -1,8 +1,8 @@
 import type { ForgeContext } from "../context";
 import type { Signals } from "./signals";
 
-/** Diffs above this many changed lines are "too large to verify" (tuned in M3). */
-export const SIZE_CAP_LINES = 800;
+/** Diffs above this many changed lines (generated files excluded) are "too large to verify". Tuned in M3. */
+export const SIZE_CAP_LINES = 1500;
 /** A description with at least this many words counts as a stated reason, even without a Why section. */
 const REASON_MIN_WORDS = 20;
 

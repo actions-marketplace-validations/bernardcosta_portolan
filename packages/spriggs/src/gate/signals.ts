@@ -37,6 +37,13 @@ const KIND_BY_TYPE: Record<string, Kind> = {
   docs: "internal",
 };
 
+/** Lockfiles and other generated files: never counted, never shown to the model. */
+const GENERATED = [
+  /(^|\/)[^/]*\.lock$/,
+  /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|go\.sum|Cargo\.lock|composer\.lock|Gemfile\.lock|poetry\.lock)$/,
+];
+export const isGenerated = (path: string): boolean => GENERATED.some((re) => re.test(path));
+
 // type(scope)!: subject
 const CONVENTIONAL = /^(\w+)(?:\([^)]*\))?(!)?:\s/;
 
@@ -79,7 +86,9 @@ export function signals(ctx: ForgeContext, config?: PortolanConfig): Signals {
     breaking,
     issueIds,
     filesChanged: ctx.files.length,
-    linesChanged: ctx.files.reduce((n, f) => n + f.additions + f.deletions, 0),
+    linesChanged: ctx.files
+      .filter((f) => !isGenerated(f.path))
+      .reduce((n, f) => n + f.additions + f.deletions, 0),
     touchesApi: paths.some(
       (p) => /(^|\/)api\//.test(p) || /\.(proto|graphql|openapi\.(ya?ml|json))$/.test(p),
     ),

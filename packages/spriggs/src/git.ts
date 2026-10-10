@@ -32,6 +32,17 @@ export async function untrackedFiles(cwd = process.cwd()): Promise<ChangedFile[]
   );
 }
 
+/** The diff split per file: path -> its `diff --git` chunk. Renames are keyed by the new path. */
+export function diffByFile(revisions: string[], cwd?: string): Map<string, string> {
+  const out = git(["diff", ...revisions, "--", "."], cwd);
+  const chunks = new Map<string, string>();
+  for (const chunk of out.split(/^(?=diff --git )/m)) {
+    const m = /^diff --git a\/.*? b\/(.+)$/m.exec(chunk);
+    if (m?.[1]) chunks.set(m[1], chunk);
+  }
+  return chunks;
+}
+
 export function commitSubjects(base: string, head: string, cwd?: string): string[] {
   return git(["log", "--reverse", "--format=%s", `${base}..${head}`], cwd)
     .trim()

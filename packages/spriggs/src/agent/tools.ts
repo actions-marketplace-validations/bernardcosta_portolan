@@ -5,7 +5,7 @@ import { parsePortolanYml } from "../docs/portolan";
 import { git } from "../git";
 import type { ToolDef } from "./providers/types";
 
-// The four tools are the security boundary. The model has nothing else: no shell, no network.
+// The five tools are the security boundary. The model has nothing else: no shell, no network.
 
 const READ_CAP = 64_000;
 const WRITE_CAP = 100_000;
@@ -21,15 +21,23 @@ export type FinishResult = {
 
 export type ToolRuntime = {
   cwd: string;
-  tracked: Set<string>;
+  /** Files the model may read: tracked by git, plus the changed files of this run (new files included). */
+  readable: Set<string>;
+  /** The diff of this run, split per changed file. */
+  diffs: Map<string, string>;
   /** Files the model wrote this run, with their content before the first write (null = did not exist). */
   originals: Map<string, string | null>;
   finished?: FinishResult;
 };
 
-export function createRuntime(cwd = process.cwd()): ToolRuntime {
-  const tracked = new Set(git(["ls-files"], cwd).trim().split("\n").filter(Boolean));
-  return { cwd, tracked, originals: new Map() };
+export function createRuntime(
+  cwd: string,
+  diffs: Map<string, string>,
+  changedPaths: string[],
+): ToolRuntime {
+  const readable = new Set(git(["ls-files"], cwd).trim().split("\n").filter(Boolean));
+  for (const p of changedPaths) readable.add(p);
+  return { cwd, readable, diffs, originals: new Map() };
 }
 
 /** Puts every file the model wrote back the way it was. */
@@ -58,6 +66,17 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "read_file",
     description: "Read a file tracked by git. Large files are cut at 64 KB.",
+    schema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "read_diff",
+    description:
+      "The diff of one changed file in this pull request. Use it for files whose diff is not shown.",
     schema: {
       type: "object",
       properties: { path: { type: "string" } },
@@ -155,19 +174,34 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       const dir = safeRel(field(input, "dir") ?? "");
       if (dir === undefined) return err("invalid directory");
       const prefix = dir ? `${dir}/` : "";
-      const files = [...rt.tracked].filter((p) => p.startsWith(prefix)).sort();
+      const files = [...rt.readable].filter((p) => p.startsWith(prefix)).sort();
       return files.length ? ok(files.join("\n")) : err(`no tracked files under "${dir}"`);
     }
     case "read_file": {
       const path = safeRel(field(input, "path"));
-      if (!path || (!rt.tracked.has(path) && !rt.originals.has(path)))
-        return err("not a tracked file");
+      if (!path || (!rt.readable.has(path) && !rt.originals.has(path)))
+        return err("not a readable file");
+      if (!existsSync(join(rt.cwd, path))) return err("file does not exist in this revision");
       const text = await Bun.file(join(rt.cwd, path)).text();
       return ok(
         text.length > READ_CAP
           ? `${text.slice(0, READ_CAP)}\n[cut at ${READ_CAP} characters]`
           : text,
       );
+    }
+    case "read_diff": {
+      const path = safeRel(field(input, "path"));
+      const chunk = path ? rt.diffs.get(path) : undefined;
+      if (chunk) {
+        return ok(
+          chunk.length > READ_CAP
+            ? `${chunk.slice(0, READ_CAP)}\n[cut at ${READ_CAP} characters; use read_file for the full new content]`
+            : chunk,
+        );
+      }
+      if (path && rt.readable.has(path))
+        return ok("new file, not in git yet: use read_file for its content");
+      return err("not a changed file in this pull request");
     }
     case "write_doc":
       return writeDoc(rt, field(input, "path"), field(input, "content"));

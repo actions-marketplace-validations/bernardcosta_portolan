@@ -47,6 +47,7 @@ export class OpenAIProvider implements Provider {
       usage: {
         input: response.usage?.prompt_tokens ?? 0,
         output: response.usage?.completion_tokens ?? 0,
+        cached: response.usage?.prompt_tokens_details?.cached_tokens ?? 0,
       },
       stop: choice.finish_reason ?? "unknown",
       raw: message,

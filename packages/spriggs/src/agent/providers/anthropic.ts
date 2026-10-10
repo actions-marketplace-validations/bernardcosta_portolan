@@ -20,7 +20,8 @@ export class AnthropicProvider implements Provider {
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: req.maxTokens,
-      system: req.system,
+      // Cache the stable prefix: tools, system prompt and the first user message. Later turns hit it.
+      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
       tools: req.tools.map((t) => ({
         name: t.name,
         description: t.description,
@@ -40,17 +41,29 @@ export class AnthropicProvider implements Provider {
       calls: response.content
         .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
         .map((b) => ({ id: b.id, name: b.name, input: b.input })),
-      usage: { input: response.usage.input_tokens, output: response.usage.output_tokens },
+      usage: {
+        input:
+          response.usage.input_tokens +
+          (response.usage.cache_read_input_tokens ?? 0) +
+          (response.usage.cache_creation_input_tokens ?? 0),
+        output: response.usage.output_tokens,
+        cached: response.usage.cache_read_input_tokens ?? 0,
+      },
       stop: response.stop_reason ?? "unknown",
       raw: response.content,
     };
   }
 }
 
-function toMessage(turn: Turn): Anthropic.MessageParam {
+function toMessage(turn: Turn, index: number): Anthropic.MessageParam {
   switch (turn.role) {
     case "user":
-      return { role: "user", content: turn.text };
+      return index === 0
+        ? {
+            role: "user",
+            content: [{ type: "text", text: turn.text, cache_control: { type: "ephemeral" } }],
+          }
+        : { role: "user", content: turn.text };
     case "assistant":
       // Echo the content blocks back unchanged, thinking blocks included.
       return { role: "assistant", content: turn.raw as Anthropic.ContentBlockParam[] };
