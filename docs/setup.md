@@ -5,6 +5,7 @@ covers:
   - packages/spriggs/src/forge/local.ts
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/loop.ts
+  - packages/spriggs/src/agent/tools.ts
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/report.ts
@@ -66,7 +67,7 @@ The model sees the subject and body of each commit in the pull request, oldest f
 
 ### Size and coverage
 
-The model gets the whole diff of each changed file inline, up to about 320 KB in total (about 5,000 changed lines). Files that do not fit are listed as "not shown". If the model tries to finish before reading them, Spriggs reminds it once; a second finish is accepted.
+The model gets the whole diff of each changed file inline, up to about 320 KB in total (about 5,000 changed lines). Files that do not fit are listed as "not shown". If the model tries to finish before reading them, Spriggs reminds it once; a second finish is accepted. The model's `read_file` tool returns up to 64 KB per call and takes a start line and a line count, so it can read a large file in parts.
 
 The budget depends on the size of the change, counted in changed lines with generated files left out:
 
@@ -77,7 +78,7 @@ The budget depends on the size of the change, counted in changed lines with gene
 
 The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
 
-Spriggs counts which changed files the model actually saw, inline or by reading them, and logs `coverage: read N/M`. If some changed files were never read before the budget ran out, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read, budget ran out**, and the change entry records partial coverage.
+Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read, budget ran out**, and the change entry records partial coverage. A run that hits the turn limit without finishing fails instead and sets `docs:needs-input`.
 
 ## Layout
 
