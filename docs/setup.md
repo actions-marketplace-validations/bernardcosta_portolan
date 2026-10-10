@@ -3,6 +3,11 @@ summary: Get a working copy running with Bun on the host. No Docker.
 covers:
   - packages/spriggs/src/run.ts
   - packages/spriggs/src/forge/local.ts
+  - packages/spriggs/src/agent/model.ts
+  - packages/spriggs/src/cli.ts
+  - packages/spriggs/src/gate/decide.ts
+  - .github/workflows/spriggs.yml
+  - .env.example
 ---
 
 # Setup
@@ -15,7 +20,7 @@ covers:
 ## Steps
 
 1. Clone the repo.
-2. Copy `.env.example` to `.env`. Add one provider key and `SPRIGGS_MODEL`. `.env` is gitignored.
+2. Copy `.env.example` to `.env` and add one provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`). Set `SPRIGGS_MODEL` too, unless you only use Anthropic (see [Model](#model)). `.env` is gitignored.
 3. Install dependencies: `bun install`.
 4. Run the checks: `bun run check` and `bun run typecheck`. This runs Biome (lint and format) and `tsc`.
 
@@ -28,7 +33,30 @@ covers:
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
 
-In `--local` mode there is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+Full usage: `portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]`.
+
+- `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
+- `--model <provider/model>` overrides `SPRIGGS_MODEL`.
+
+In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+
+## Model
+
+The model is `provider/model`. Precedence: the `--model` flag, then `SPRIGGS_MODEL`, then `anthropic/claude-opus-5-5` when `ANTHROPIC_API_KEY` is set. Providers:
+
+| Prefix | Key |
+| --- | --- |
+| `anthropic/<model>` | `ANTHROPIC_API_KEY` |
+| `openai/<model>` | `OPENAI_API_KEY` |
+| `openrouter/<vendor>/<model>` | `OPENROUTER_API_KEY` |
+
+A missing model or key fails the run before any network call, naming the missing variable.
+
+## CI
+
+`.github/workflows/spriggs.yml` runs `bun run spriggs run` on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions.
+
+Each run posts one sticky comment with the gate signals and verdict, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits.
 
 ## Layout
 
@@ -40,4 +68,4 @@ docs/               this repo's own docs, per the /docs contract
 
 ## Pull requests
 
-Fill in the **Why** section of the pull request template. The gate reads it. Without a reason, Spriggs asks for one and writes no entry.
+Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff but marks the run `docs:partial` and asks for one. With no reason and a diff over 1500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`.
