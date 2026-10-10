@@ -9,8 +9,13 @@ const DEFAULT_ANTHROPIC_MODEL = "anthropic/claude-opus-5-5";
  * chosen from which key is present. Fails before any network call, naming the missing variable.
  */
 export function resolveProvider(flagModel?: string, env = process.env): Provider {
-  const spec =
-    flagModel || env.SPRIGGS_MODEL || (env.ANTHROPIC_API_KEY ? DEFAULT_ANTHROPIC_MODEL : "");
+  return resolveSpec(
+    flagModel || env.SPRIGGS_MODEL || (env.ANTHROPIC_API_KEY ? DEFAULT_ANTHROPIC_MODEL : ""),
+    env,
+  );
+}
+
+function resolveSpec(spec: string, env: NodeJS.ProcessEnv): Provider {
   if (!spec) {
     throw new Error(
       "no model configured: set SPRIGGS_MODEL (provider/model) and the provider's API key, e.g. ANTHROPIC_API_KEY",

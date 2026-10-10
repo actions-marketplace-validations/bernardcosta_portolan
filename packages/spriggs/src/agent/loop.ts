@@ -3,26 +3,42 @@ import type { Provider, Turn, Usage } from "./providers/types";
 import { type FinishResult, runTool, TOOL_DEFS, type ToolRuntime } from "./tools";
 
 export type Budget = { maxTurns: number; maxTokens: number; timeoutMs: number };
-export const DEFAULT_BUDGET: Budget = {
-  maxTurns: 30,
-  maxTokens: 600_000,
-  timeoutMs: 10 * 60 * 1000,
+export const SMALL_BUDGET: Budget = { maxTurns: 30, maxTokens: 600_000, timeoutMs: 10 * 60 * 1000 };
+/** Large changes read more files over more turns; most input is cached. */
+export const LARGE_BUDGET: Budget = {
+  maxTurns: 40,
+  maxTokens: 1_500_000,
+  timeoutMs: 15 * 60 * 1000,
 };
 
 const MAX_OUTPUT_TOKENS = 16_000;
+
+export type AgentResult = {
+  result: FinishResult;
+  usage: Usage;
+  turns: number;
+  /** Changed files the model saw: inline in the message, or through read_diff / read_file. */
+  seen: Set<string>;
+};
 
 /** The agent loop: complete -> run tool calls -> append results, until `finish` or a budget runs out. */
 export async function runAgent(opts: {
   provider: Provider;
   rt: ToolRuntime;
   userMessage: string;
+  /** Changed files whose diff is inline in the message. */
+  inlineShown?: string[];
+  /** Changed files the model must read before `finish` (not inline). The loop reminds it once. */
+  mustRead?: string[];
   budget?: Budget;
-}): Promise<{ result: FinishResult; usage: Usage; turns: number }> {
-  const budget = opts.budget ?? DEFAULT_BUDGET;
+}): Promise<AgentResult> {
+  const budget = opts.budget ?? SMALL_BUDGET;
   const started = Date.now();
   const usage: Usage = { input: 0, output: 0, cached: 0 };
   const turns: Turn[] = [{ role: "user", text: opts.userMessage }];
+  const seen = new Set(opts.inlineShown ?? []);
   let nudged = false;
+  let reminded = false;
 
   for (let turn = 1; turn <= budget.maxTurns; turn++) {
     if (Date.now() - started > budget.timeoutMs)
@@ -54,13 +70,35 @@ export async function runAgent(opts: {
 
     const results = [];
     for (const call of c.calls) {
-      const r = await runTool(opts.rt, call.name, call.input);
-      if (r.isError) console.log(`  ${call.name}: ${r.content}`);
+      let r = await runTool(opts.rt, call.name, call.input);
+      const path = pathOf(call.input);
+      if (!r.isError && path && (call.name === "read_diff" || call.name === "read_file"))
+        seen.add(path);
+      // Files not shown inline must be read before finishing. One reminder; the second finish is accepted.
+      if (call.name === "finish" && !r.isError && !reminded) {
+        const missed = (opts.mustRead ?? []).filter((p) => !seen.has(p));
+        if (missed.length) {
+          reminded = true;
+          opts.rt.finished = undefined;
+          r = {
+            isError: true,
+            content: `Not yet. These changed files were not shown and you have not read them; read them (read_diff or read_file), then call finish again:\n${missed.map((p) => `- ${p}`).join("\n")}`,
+          };
+          console.log(`  finish: ${missed.length} changed file(s) not read yet`);
+        }
+      }
+      if (r.isError) console.log(`  ${call.name}: ${r.content.split("\n")[0]}`);
       results.push({ id: call.id, ...r });
     }
     turns.push({ role: "tool", results });
-    if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turn };
+    if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turn, seen };
   }
-  if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turns.length };
+  if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turns.length, seen };
   throw new Error(`agent loop hit the ${budget.maxTurns} turn limit without finishing`);
+}
+
+function pathOf(input: unknown): string | undefined {
+  const p =
+    typeof input === "object" && input !== null ? (input as { path?: unknown }).path : undefined;
+  return typeof p === "string" ? p.replace(/^\.\//, "") : undefined;
 }
