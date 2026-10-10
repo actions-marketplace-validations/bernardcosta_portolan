@@ -78,7 +78,7 @@ The budget depends on the size of the change, counted in changed lines with gene
 
 The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
 
-Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read, budget ran out**, and the change entry records partial coverage. A run that hits the turn limit without finishing fails instead and sets `docs:needs-input`.
+Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read:**, and the change entry records partial coverage. A run that runs out of turns, tokens or time before it finishes fails instead and sets `docs:needs-input`.
 
 ## Layout
 
