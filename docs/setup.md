@@ -81,6 +81,10 @@ The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to ch
 
 Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read:**, and the change entry records partial coverage. A run that runs out of turns, tokens or time before it finishes fails instead and sets `docs:needs-input`.
 
+### Output limit
+
+The model may write up to 32,000 tokens in one reply, and one doc file written with `write_doc` may be up to 80,000 characters. If a reply is cut at the output limit, Spriggs asks the model once to write the file in a shorter form or split it into two files, and logs `reply cut at the output limit; asked for a shorter one`. If the next reply is cut too, the run fails and sets `docs:needs-input`.
+
 ### Context window
 
 Once a single request to the model goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window), Spriggs clears the contents of tool results older than the last three tool turns from the history. The model can call the tool again if it needs that content. The console logs `context: cleared N older tool result(s)`. For a model with a 200K-token window, set `SPRIGGS_CONTEXT_TOKENS` to about 120000.
