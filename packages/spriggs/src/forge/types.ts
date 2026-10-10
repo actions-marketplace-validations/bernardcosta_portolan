@@ -5,6 +5,8 @@ export type Label = (typeof LABELS)[number];
 
 export type StatusState = "success" | "failure" | "pending";
 
+export type PushResult = "pushed" | "superseded" | "nothing" | "local";
+
 /** Everything Spriggs needs from a code host. The orchestrator never talks to GitHub directly. */
 export interface Forge {
   getContext(): Promise<ForgeContext>;
@@ -14,4 +16,6 @@ export interface Forge {
   setLabel(label: Label): Promise<void>;
   /** The `spriggs` commit status on the head SHA. */
   setStatus(state: StatusState, description: string): Promise<void>;
+  /** Commit everything under docs/ as Spriggs and push to the PR branch. */
+  commitAndPush(message: string): Promise<PushResult>;
 }

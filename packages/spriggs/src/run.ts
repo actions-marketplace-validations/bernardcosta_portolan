@@ -1,23 +1,23 @@
+import { runAgent } from "./agent/loop";
+import { resolveProvider } from "./agent/model";
+import { buildUserMessage } from "./agent/prompt";
+import type { Provider, Usage } from "./agent/providers/types";
+import { createRuntime, revertWrites } from "./agent/tools";
 import { loadPortolanConfig } from "./docs/portolan";
+import { affectedDocs, docsIndex } from "./docs/tree";
+import { enforce } from "./enforce";
+import { type Entry, writeEntry } from "./entry/writer";
 import type { Forge, Label, StatusState } from "./forge/types";
-import { decide, skipReason, type Verdict } from "./gate/decide";
-import { type Signals, signals } from "./gate/signals";
-import { renderComment, verdictLine } from "./report";
+import { decide, skipReason } from "./gate/decide";
+import { signals } from "./gate/signals";
+import { git } from "./git";
+import { type RunReport, renderComment, verdictLine } from "./report";
 
-function labelFor(v: Verdict): Label {
-  if (v.outcome === "proceed") return "docs:done";
-  if (v.outcome === "partial") return "docs:partial";
-  return "docs:needs-input";
-}
+export type RunOptions = { cwd?: string; model?: string };
 
-function statusFor(v: Verdict, s: Signals): [StatusState, string] {
-  const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
-  if (v.outcome === "abstain" && blocking) return ["failure", "needs input: add a Why section"];
-  return ["success", verdictLine(v, s).replace(/\*\*/g, "")];
-}
-
-/** context -> skip rules -> stage one -> decide -> comment -> label -> status. Returns the exit code. */
-export async function run(forge: Forge, cwd = process.cwd()): Promise<number> {
+/** context -> skip rules -> stage one -> decide -> agent -> enforce -> entry -> commit -> report. */
+export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> {
+  const cwd = opts.cwd ?? process.cwd();
   const ctx = await forge.getContext();
   const { config, errors } = await loadPortolanConfig(cwd);
   for (const e of errors) console.warn(`warning: ${e}`);
@@ -32,8 +32,127 @@ export async function run(forge: Forge, cwd = process.cwd()): Promise<number> {
   const verdict = decide(s);
   console.log(`gate: ${verdict.outcome}${"reason" in verdict ? ` (${verdict.reason})` : ""}`);
 
-  await forge.upsertComment(renderComment(s, verdict));
-  await forge.setLabel(labelFor(verdict));
-  await forge.setStatus(...statusFor(verdict, s));
-  return 0;
+  const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
+  const report = async (label: Label, status: [StatusState, string], runReport?: RunReport) => {
+    await forge.upsertComment(renderComment(s, verdict, runReport));
+    await forge.setLabel(label);
+    await forge.setStatus(...status);
+    return 0;
+  };
+
+  if (verdict.outcome === "abstain") {
+    const plain = verdictLine(verdict, s).replace(/\*\*/g, "");
+    return report(
+      "docs:needs-input",
+      blocking ? ["failure", "needs input: add a Why section"] : ["success", plain],
+    );
+  }
+
+  let provider: Provider;
+  try {
+    provider = resolveProvider(opts.model);
+  } catch (e) {
+    return report("docs:needs-input", ["failure", "Spriggs is not configured"], {
+      kind: "failed",
+      reason: `Configuration error: ${(e as Error).message}.`,
+    });
+  }
+
+  const rt = createRuntime(cwd);
+  const fail = (reason: string, extra: { usage?: Usage } = {}) => {
+    revertWrites(rt);
+    console.error(`failed: ${reason}`);
+    return report("docs:needs-input", ["failure", reason.slice(0, 140)], {
+      kind: "failed",
+      reason,
+      ...extra,
+      model: provider.model,
+    });
+  };
+
+  const index = await docsIndex(cwd);
+  let agent: Awaited<ReturnType<typeof runAgent>>;
+  try {
+    const changedPaths = ctx.files.map((f) => f.path);
+    const userMessage = buildUserMessage({
+      signals: s,
+      verdict,
+      title: ctx.pr?.title ?? ctx.head.subject,
+      body: ctx.pr?.body ?? "",
+      diff: git(
+        [
+          "diff",
+          ...ctx.diffRevisions,
+          "--",
+          ".",
+          ":(exclude)*.lock",
+          ":(exclude)package-lock.json",
+        ],
+        cwd,
+      ),
+      changedPaths,
+      index,
+      affected: affectedDocs(index, changedPaths),
+    });
+    agent = await runAgent({ provider, rt, userMessage });
+  } catch (e) {
+    return fail(`The agent run failed: ${(e as Error).message}`);
+  }
+  const { result, usage, turns } = agent;
+
+  const check = await enforce(rt, { strictTree: ctx.pr !== undefined });
+  if (!check.ok) return fail(`Post-run check failed: ${check.reason}`, { usage });
+
+  // kind and breaking are mechanical where the commit type decides; the model fills the gaps.
+  const kind =
+    s.kind === "added" && result.kind === "changed"
+      ? "changed"
+      : (s.kind ?? (result.kind === "unknown" ? "changed" : result.kind));
+  const needsEntry = kind !== "internal" || result.large_refactor;
+  let entryPath: string | undefined;
+  if (needsEntry) {
+    const entry: Entry = {
+      title: result.title,
+      kind,
+      breaking: s.breaking,
+      pr: ctx.pr?.number ?? 0,
+      coverage: verdict.outcome === "partial" ? "partial" : "full",
+      ...(verdict.outcome === "partial" ? { reason: verdict.reason } : {}),
+      docs: result.docs.filter((d) => check.written.includes(d) || index.some((i) => i.path === d)),
+      body: result.body,
+    };
+    try {
+      entryPath = await writeEntry(cwd, entry);
+    } catch (e) {
+      return fail(`Could not write the change entry: ${(e as Error).message}`, { usage });
+    }
+  }
+
+  const pushed = await forge.commitAndPush(`docs: ${oneLine(result.title)}`);
+  if (pushed === "superseded") {
+    console.log("superseded: the branch moved during the run");
+    return 0;
+  }
+
+  const base = { usage, model: provider.model, turns, notes: result.notes };
+  if (pushed === "nothing" && !entryPath) {
+    return report("docs:none", ["success", "no docs change needed"], { kind: "none", ...base });
+  }
+  const label: Label = verdict.outcome === "partial" ? "docs:partial" : "docs:done";
+  const runReport: RunReport = {
+    kind: "docs",
+    written: check.written,
+    ...(entryPath ? { entry: entryPath } : {}),
+    ...base,
+  };
+  return report(label, ["success", verdictLine(verdict, s).replace(/\*\*/g, "")], runReport);
+}
+
+/** Commit titles are model output: one line, no control characters, at most 72 characters. */
+function oneLine(title: string): string {
+  const clean = title
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return clean.length > 72 ? `${clean.slice(0, 69).trimEnd()}...` : clean;
 }

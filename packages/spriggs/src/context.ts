@@ -23,6 +23,8 @@ export type ForgeContext = {
   /** The workflow event that started this run. Absent in --local mode. */
   event?: { action: string; bodyChanged: boolean };
   files: ChangedFile[];
+  /** Revision arguments for `git diff` that reproduce `files`. */
+  diffRevisions: string[];
 };
 
 /** The identity Spriggs commits with. The self-skip rule matches on the email. */

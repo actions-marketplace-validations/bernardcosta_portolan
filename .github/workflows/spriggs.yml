@@ -31,3 +31,6 @@ jobs:
       - run: bun run spriggs run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # provider/model. Leave empty to use anthropic/claude-opus-5-5 when ANTHROPIC_API_KEY is set.
+          SPRIGGS_MODEL: ${{ vars.SPRIGGS_MODEL }}

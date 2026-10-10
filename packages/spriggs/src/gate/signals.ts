@@ -47,7 +47,8 @@ function conventional(subject: string): { type: string; bang: boolean } | undefi
 
 /** The text under a "Why" heading, or "" when there is none. */
 export function whySection(body: string): string {
-  const m = /^#{1,6}\s*why\b[^\n]*\n([\s\S]*?)(?=^#{1,6}\s|\s*$)/im.exec(body);
+  // From a "Why" heading to the next heading or the end of the body. No `m` flag: `$` is the end.
+  const m = /(?:^|\n)#{1,6}[ \t]*why\b[^\n]*\n([\s\S]*?)(?=\n#{1,6}[ \t]|$)/i.exec(body);
   return (m?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "").trim();
 }
 

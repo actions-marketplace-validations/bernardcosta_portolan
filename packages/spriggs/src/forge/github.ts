@@ -1,7 +1,7 @@
 import { Octokit } from "@octokit/rest";
-import type { ForgeContext } from "../context";
-import { changedFiles, commitInfo, commitSubjects } from "../git";
-import { type Forge, LABELS, type Label, type StatusState } from "./types";
+import { type ForgeContext, SPRIGGS_EMAIL, SPRIGGS_NAME } from "../context";
+import { changedFiles, commitInfo, commitSubjects, git } from "../git";
+import { type Forge, LABELS, type Label, type PushResult, type StatusState } from "./types";
 
 const MARKER = "<!-- spriggs -->";
 
@@ -29,11 +29,14 @@ function required(name: string): string {
 
 export class GitHubForge implements Forge {
   private readonly octokit: Octokit;
+  private readonly token: string;
   private readonly eventPath: string;
   private event?: PullRequestEvent;
+  private headSha = "";
 
   constructor(private readonly cwd = process.cwd()) {
-    this.octokit = new Octokit({ auth: required("GITHUB_TOKEN") });
+    this.token = required("GITHUB_TOKEN");
+    this.octokit = new Octokit({ auth: this.token });
     this.eventPath = required("GITHUB_EVENT_PATH");
   }
 
@@ -57,6 +60,8 @@ export class GitHubForge implements Forge {
     this.event = event;
     const { pull_request: pr, repository } = event;
     const head = commitInfo(pr.head.sha, this.cwd);
+    this.headSha = pr.head.sha;
+    const diffRevisions = [`${pr.base.sha}...${pr.head.sha}`];
     return {
       repo: {
         owner: repository.owner.login,
@@ -81,7 +86,8 @@ export class GitHubForge implements Forge {
         commits: commitSubjects(pr.base.sha, pr.head.sha, this.cwd),
       },
       event: { action: event.action, bodyChanged: event.changes?.body !== undefined },
-      files: changedFiles([`${pr.base.sha}...${pr.head.sha}`], this.cwd),
+      files: changedFiles(diffRevisions, this.cwd),
+      diffRevisions,
     };
   }
 
@@ -116,10 +122,51 @@ export class GitHubForge implements Forge {
     await this.octokit.repos.createCommitStatus({
       owner,
       repo,
-      sha: this.ev.pull_request.head.sha,
+      sha: this.headSha,
       context: "spriggs",
       state,
       description: description.slice(0, 140),
     });
+  }
+
+  async commitAndPush(message: string): Promise<PushResult> {
+    git(["add", "--all", "docs"], this.cwd);
+    if (!git(["diff", "--cached", "--name-only"], this.cwd).trim()) return "nothing";
+    git(
+      [
+        "-c",
+        `user.name=${SPRIGGS_NAME}`,
+        "-c",
+        `user.email=${SPRIGGS_EMAIL}`,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "--quiet",
+        "-m",
+        message,
+      ],
+      this.cwd,
+    );
+    // The token goes to git for this one command only; it is never stored in git config.
+    const auth = Buffer.from(`x-access-token:${this.token}`).toString("base64");
+    try {
+      git(
+        [
+          "-c",
+          `http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth}`,
+          "push",
+          "--quiet",
+          "origin",
+          `HEAD:refs/heads/${this.ev.pull_request.head.ref}`,
+        ],
+        this.cwd,
+      );
+    } catch (e) {
+      const msg = (e as Error).message.replace(auth, "***");
+      if (/rejected|fetch first|non-fast-forward/.test(msg)) return "superseded";
+      throw new Error(msg);
+    }
+    this.headSha = commitInfo("HEAD", this.cwd).sha;
+    return "pushed";
   }
 }

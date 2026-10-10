@@ -1,3 +1,4 @@
+import type { Usage } from "./agent/providers/types";
 import type { Verdict } from "./gate/decide";
 import { SIZE_CAP_LINES } from "./gate/decide";
 import type { Signals } from "./gate/signals";
@@ -8,7 +9,7 @@ export function verdictLine(v: Verdict, s: Signals): string {
       return `**proceed** — reason stated, diff readable (${s.linesChanged} lines in ${s.filesChanged} files)`;
     case "partial":
       return v.reason === "diff-too-large"
-        ? `**partial** — reason stated, but ${s.linesChanged} changed lines is above the ${SIZE_CAP_LINES} line cap. Only the public surface would be checked.`
+        ? `**partial** — reason stated, but ${s.linesChanged} changed lines is above the ${SIZE_CAP_LINES} line cap. Only the public surface was checked.`
         : "**partial** — the diff is readable, but the description states no reason. Add a **Why** section to the description.";
     case "abstain":
       return `**abstain** — no reason in the description and ${s.linesChanged} changed lines is above the ${SIZE_CAP_LINES} line cap. Add a **Why** section, or split the change.`;
@@ -17,7 +18,20 @@ export function verdictLine(v: Verdict, s: Signals): string {
 
 const yes = (b: boolean) => (b ? "yes" : "no");
 
-export function renderComment(s: Signals, v: Verdict): string {
+export type RunReport =
+  | {
+      kind: "docs";
+      written: string[];
+      entry?: string;
+      notes: string;
+      usage: Usage;
+      model: string;
+      turns: number;
+    }
+  | { kind: "none"; notes: string; usage: Usage; model: string; turns: number }
+  | { kind: "failed"; reason: string; usage?: Usage; model?: string };
+
+export function renderComment(s: Signals, v: Verdict, run?: RunReport): string {
   const rows: [string, string][] = [
     ["Description", yes(s.descriptionPresent)],
     ["Why section", yes(s.hasWhy)],
@@ -40,10 +54,46 @@ export function renderComment(s: Signals, v: Verdict): string {
     "",
     `Gate: ${verdictLine(v, s)}`,
     "",
+    ...(run ? [...renderRun(run), ""] : []),
+    "<details><summary>Gate signals</summary>",
+    "",
     "| Signal | Value |",
     "| --- | --- |",
     ...rows.map(([k, val]) => `| ${k} | ${val} |`),
     "",
-    "_Milestone 1: gate only. Spriggs does not write docs yet._",
+    "</details>",
   ].join("\n");
+}
+
+function renderRun(run: RunReport): string[] {
+  const usage = (u: Usage | undefined, model: string | undefined, turns?: number) =>
+    u
+      ? `_${model ?? "model"}: ${u.input.toLocaleString()} input + ${u.output.toLocaleString()} output tokens${turns ? `, ${turns} turns` : ""}._`
+      : "";
+  switch (run.kind) {
+    case "docs":
+      return [
+        "**Docs updated.** Review the `docs:` commit on this branch.",
+        "",
+        ...run.written.map((p) => `- \`${p}\``),
+        ...(run.entry ? [`- \`${run.entry}\` (change entry)`] : []),
+        ...(run.notes ? ["", `Notes from the run: ${run.notes}`] : []),
+        "",
+        usage(run.usage, run.model, run.turns),
+      ];
+    case "none":
+      return [
+        "**No docs change needed.** The run found nothing in `docs/` that this change contradicts.",
+        ...(run.notes ? ["", `Notes from the run: ${run.notes}`] : []),
+        "",
+        usage(run.usage, run.model, run.turns),
+      ];
+    case "failed":
+      return [
+        `**Spriggs could not update the docs.** ${run.reason}`,
+        "",
+        "Nothing was committed. Fix the cause and push, or edit the description to rerun.",
+        ...(run.usage ? ["", usage(run.usage, run.model)] : []),
+      ];
+  }
 }

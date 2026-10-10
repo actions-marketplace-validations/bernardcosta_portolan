@@ -4,7 +4,7 @@ import { GitHubForge } from "./forge/github";
 import { LocalForge } from "./forge/local";
 import { run } from "./run";
 
-const USAGE = `Usage: portolan spriggs run [--local --base <ref>] [--model <provider/model>]`;
+const USAGE = `Usage: portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]`;
 
 async function main(argv: string[]): Promise<number> {
   // `portolan spriggs run ...` from the bin, `bun run spriggs run ...` from the root script.
@@ -18,6 +18,7 @@ async function main(argv: string[]): Promise<number> {
     options: {
       local: { type: "boolean", default: false },
       base: { type: "string" },
+      reason: { type: "string" },
       model: { type: "string" },
     },
   });
@@ -25,8 +26,11 @@ async function main(argv: string[]): Promise<number> {
     console.error("--local needs --base <ref>");
     return 2;
   }
-  const forge = values.local && values.base ? new LocalForge(values.base) : new GitHubForge();
-  return run(forge);
+  const forge =
+    values.local && values.base
+      ? new LocalForge(values.base, values.reason ?? "")
+      : new GitHubForge();
+  return run(forge, values.model ? { model: values.model } : {});
 }
 
 main(process.argv.slice(2)).then(
