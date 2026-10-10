@@ -27,7 +27,7 @@ export type ToolRuntime = {
   diffs: Map<string, string>;
   /** Files the model wrote this run, with their content before the first write (null = did not exist). */
   originals: Map<string, string | null>;
-  finished?: FinishResult;
+  finished?: FinishResult | undefined;
 };
 
 export function createRuntime(
