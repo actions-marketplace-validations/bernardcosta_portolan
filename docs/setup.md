@@ -59,6 +59,8 @@ A missing model or key fails the run before any network call, naming the missing
 
 Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. It starts with the gate result (**Gate: go**, **Gate: partial** or **Gate: stopped**) and why, then what the run did, then a folded **What I saw** table with the signals the gate read. The commit status carries a one-line form of the gate result. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
 
+The status is `success` in most cases. It is `failure` when the run fails (missing model or key, agent error, failed post-run check), which also sets `docs:needs-input`. When the gate stops, the status is `failure` only if the change is breaking or the environment variable `SPRIGGS_BLOCKING` is `true`; otherwise it stays `success`.
+
 The model sees the subject and body of each commit in the pull request, oldest first. If the description has not changed since the last run but new commits were pushed, the comment shows a **Heads up** note with the number of newer commits and asks whether the reason still holds. The model is told to prefer the commit messages for those commits. This note never blocks the run.
 
 ## Layout
