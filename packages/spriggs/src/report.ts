@@ -34,7 +34,9 @@ export function renderComment(s: Signals, v: Verdict): string {
     ],
   ];
   return [
-    "## Spriggs",
+    "## Spriggs: documentation harness report",
+    "",
+    "Spriggs reads each pull request, decides whether it has enough information to update `/docs`, and then updates them.",
     "",
     `Gate: ${verdictLine(v, s)}`,
     "",
@@ -42,6 +44,6 @@ export function renderComment(s: Signals, v: Verdict): string {
     "| --- | --- |",
     ...rows.map(([k, val]) => `| ${k} | ${val} |`),
     "",
-    "_Stage one only. Spriggs does not write docs yet._",
+    "_Milestone 1: gate only. Spriggs does not write docs yet._",
   ].join("\n");
 }
