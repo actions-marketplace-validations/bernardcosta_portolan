@@ -4,6 +4,7 @@ covers:
   - packages/spriggs/src/run.ts
   - packages/spriggs/src/forge/local.ts
   - packages/spriggs/src/agent/model.ts
+  - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/report.ts
@@ -57,11 +58,26 @@ A missing model or key fails the run before any network call, naming the missing
 
 `.github/workflows/spriggs.yml` runs `bun run spriggs run` on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions.
 
-Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read. The commit status carries a one-line form of the gate result, starting with `go:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
+Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
 
 The status is `success` in most cases. It is `failure` when the run fails (missing model or key, agent error, failed post-run check), which also sets `docs:needs-input`. When the gate stops, the status is `failure` only if the change is breaking or the environment variable `SPRIGGS_BLOCKING` is `true`; otherwise it stays `success`.
 
 The model sees the subject and body of each commit in the pull request, oldest first. If the description has not changed since the last run but new commits were pushed, the comment shows a **Heads up** note with the number of newer commits and asks whether the reason still holds. The model is told to prefer the commit messages for those commits. This note never blocks the run.
+
+### Size and coverage
+
+The model gets the whole diff of each changed file inline, up to about 320 KB in total (about 5,000 changed lines). Files that do not fit are listed as "not shown". If the model tries to finish before reading them, Spriggs reminds it once; a second finish is accepted.
+
+The budget depends on the size of the change, counted in changed lines with generated files left out:
+
+| Size | Turns | Tokens | Time |
+| --- | --- | --- | --- |
+| Up to 1,500 lines | 30 | 600,000 | 10 minutes |
+| 1,501 lines up to the limit | 40 | 1,500,000 | 15 minutes |
+
+The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
+
+Spriggs counts which changed files the model actually saw, inline or by reading them, and logs `coverage: read N/M`. If some changed files were never read before the budget ran out, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read, budget ran out**, and the change entry records partial coverage.
 
 ## Layout
 
@@ -73,4 +89,4 @@ docs/               this repo's own docs, per the /docs contract
 
 ## Pull requests
 
-Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff but marks the run `docs:partial` and asks for one. With no reason and a diff over 1500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`. When you push new commits that change the intent, update the description too, or write the reason in the commit messages.
+Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff of a change up to 1,500 lines, but marks the run `docs:partial` and asks for one. With no reason and a diff over 1,500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`. Any change over the line limit (5,000 by default) is also stopped, reason or not. When you push new commits that change the intent, update the description too, or write the reason in the commit messages.

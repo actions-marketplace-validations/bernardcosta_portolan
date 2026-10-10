@@ -1,8 +1,7 @@
 import type { Usage } from "./agent/providers/types";
-import type { PlanFile } from "./agent/triage";
 import type { Label } from "./forge/types";
 import type { Verdict } from "./gate/decide";
-import { maxLines, SIZE_CAP_LINES } from "./gate/decide";
+import { maxLines } from "./gate/decide";
 import type { Signals } from "./gate/signals";
 
 // The sticky comment. Written as a colleague would write it: first person, plain words, short sentences.
@@ -15,12 +14,8 @@ export type Coverage = {
   changed: number;
   /** Of those, the files the model saw inline or read with a tool. */
   read: number;
-  /** Files the triage plan skipped, with the reason. */
-  skipped: PlanFile[];
-  /** Files the plan wanted read but the model never read. */
+  /** Changed files that were not shown inline and the model never read. */
   missed: string[];
-  /** Triage ran (large change). */
-  triaged: boolean;
 };
 
 export type RunReport =
@@ -49,23 +44,18 @@ export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport):
       : `**docs:needs-input** — I did not update the docs. The description does not say why this change is made, and the change is too big (${size}) to check without that. Add a **Why** section, or split the change, and I will run again.`;
   }
   const cov = run?.coverage;
-  const readCount = cov ? `read ${n(cov.read)} of ${n(cov.changed)} changed files` : "";
+  const readCount = cov ? `I read ${n(cov.read)} of ${n(cov.changed)} changed files` : "";
   if (v.outcome === "partial") {
     const extra = cov?.missed.length
-      ? ` I also ran out of budget before reading ${n(cov.missed.length)} planned files; they are listed below.`
+      ? ` I also ran out of budget before reading ${n(cov.missed.length)} changed files; they are listed below.`
       : "";
     return `**docs:partial** — I checked only part of this change. The description does not say why it is made, so I updated what the code shows and did not guess the intent. Add a **Why** section to the description and I will run again.${extra}`;
   }
   if (label === "docs:partial") {
-    return `**docs:partial** — This change is big (${size}). I triaged it and ${readCount}, then my budget ran out. The files I did not read are listed below; their changes may be missing from the docs.`;
+    return `**docs:partial** — This change is big (${size}). ${readCount}, then my budget ran out. The files I did not read are listed below; their changes may be missing from the docs.`;
   }
   if (label === "docs:none") {
-    return cov?.triaged
-      ? `**docs:none** — This change is big (${size}). I triaged it and ${readCount}. The docs already match it, and it needs no entry in the change feed.`
-      : "**docs:none** — I checked this whole change. The docs already match it, and it needs no entry in the change feed.";
-  }
-  if (cov?.triaged) {
-    return `**docs:done** — This change is big (${size}). I triaged it, ${readCount} that matter for the docs, and the docs now match it.`;
+    return `**docs:none** — I checked this whole change (${size}). The docs already match it, and it needs no entry in the change feed.`;
   }
   return run?.kind === "docs" && run.written.length === 0
     ? `**docs:done** — I checked this whole change (${size}). The docs already matched it; I wrote the change entry.`
@@ -77,8 +67,8 @@ export function statusLine(v: Verdict, s: Signals, missed = 0): string {
   switch (v.outcome) {
     case "proceed":
       return missed
-        ? `partial: ${missed} planned files not read before the budget ran out`
-        : `done: reason stated, ${n(s.linesChanged)} lines${v.tier === "large" ? " triaged and" : ""} checked`;
+        ? `partial: ${missed} changed files not read before the budget ran out`
+        : `done: reason stated, ${n(s.linesChanged)} lines checked`;
     case "partial":
       return "partial: no reason in the description, add a Why section";
     case "abstain":
@@ -104,10 +94,7 @@ export function renderComment(
     ["Kind of change", s.kind ?? "not decided yet"],
     ["Breaking", yes(s.breaking)],
     ["Linked issues", s.issueIds.length ? s.issueIds.join(", ") : "none"],
-    [
-      "Size",
-      `${n(s.filesChanged)} files, ${n(s.linesChanged)} lines (I check up to ${n(SIZE_CAP_LINES)} in one pass)`,
-    ],
+    ["Size", `${n(s.filesChanged)} files, ${n(s.linesChanged)} lines (limit ${n(maxLines())})`],
     [
       "Touches",
       [s.touchesApi && "API", s.touchesSchema && "schema", s.touchesConfig && "config"]
@@ -147,22 +134,9 @@ function renderRun(run: RunReport): string[] {
   if (run.kind === "failed") return run.usage ? [usage(run.usage, run.model)] : [];
 
   const note = run.notes ? [`A note from the run: ${run.notes}`, ""] : [];
-  const cov = run.coverage;
-  const coverage = [
-    ...(cov.missed.length
-      ? ["**Not read, budget ran out:**", "", ...cov.missed.map((p) => `- \`${p}\``), ""]
-      : []),
-    ...(cov.skipped.length
-      ? [
-          `<details><summary>Skipped on purpose: ${n(cov.skipped.length)} file${cov.skipped.length === 1 ? "" : "s"}</summary>`,
-          "",
-          ...cov.skipped.map((f) => `- \`${f.path}\`: ${f.why}`),
-          "",
-          "</details>",
-          "",
-        ]
-      : []),
-  ];
+  const missed = run.coverage.missed.length
+    ? ["**Not read, budget ran out:**", "", ...run.coverage.missed.map((p) => `- \`${p}\``), ""]
+    : [];
   const files =
     run.kind === "docs" && (run.written.length || run.entry)
       ? [
@@ -173,5 +147,5 @@ function renderRun(run: RunReport): string[] {
           "",
         ]
       : [];
-  return [...files, ...note, ...coverage, usage(run.usage, run.model, run.turns)];
+  return [...files, ...note, ...missed, usage(run.usage, run.model, run.turns)];
 }

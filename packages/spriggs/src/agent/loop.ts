@@ -1,7 +1,6 @@
 import { SYSTEM_PROMPT } from "./prompt";
 import type { Provider, Turn, Usage } from "./providers/types";
 import { type FinishResult, runTool, TOOL_DEFS, type ToolRuntime } from "./tools";
-import type { Plan } from "./triage";
 
 export type Budget = { maxTurns: number; maxTokens: number; timeoutMs: number };
 export const SMALL_BUDGET: Budget = { maxTurns: 30, maxTokens: 600_000, timeoutMs: 10 * 60 * 1000 };
@@ -29,24 +28,15 @@ export async function runAgent(opts: {
   userMessage: string;
   /** Changed files whose diff is inline in the message. */
   inlineShown?: string[];
-  /** From triage. Planned files must be read before `finish`; the loop reminds the model once. */
-  plan?: Plan;
-  /** Changed files that are new: their inline diff is their full content. */
-  newFiles?: string[];
+  /** Changed files the model must read before `finish` (not inline). The loop reminds it once. */
+  mustRead?: string[];
   budget?: Budget;
 }): Promise<AgentResult> {
   const budget = opts.budget ?? SMALL_BUDGET;
   const started = Date.now();
   const usage: Usage = { input: 0, output: 0, cached: 0 };
   const turns: Turn[] = [{ role: "user", text: opts.userMessage }];
-  // An inline diff counts as seen, except for a planned "full" read of an existing file: that needs read_file.
-  const fullOnly = new Set(
-    (opts.plan?.files ?? [])
-      .filter((f) => f.read === "full" && !(opts.newFiles ?? []).includes(f.path))
-      .map((f) => f.path),
-  );
-  const seen = new Set((opts.inlineShown ?? []).filter((p) => !fullOnly.has(p)));
-  const required = (opts.plan?.files ?? []).filter((f) => f.read !== "skip").map((f) => f.path);
+  const seen = new Set(opts.inlineShown ?? []);
   let nudged = false;
   let reminded = false;
 
@@ -82,20 +72,19 @@ export async function runAgent(opts: {
     for (const call of c.calls) {
       let r = await runTool(opts.rt, call.name, call.input);
       const path = pathOf(call.input);
-      const counts =
-        call.name === "read_file" || (call.name === "read_diff" && path && !fullOnly.has(path));
-      if (!r.isError && path && counts) seen.add(path);
-      // Planned files must be read before finishing. One reminder; the second finish is accepted.
+      if (!r.isError && path && (call.name === "read_diff" || call.name === "read_file"))
+        seen.add(path);
+      // Files not shown inline must be read before finishing. One reminder; the second finish is accepted.
       if (call.name === "finish" && !r.isError && !reminded) {
-        const missed = required.filter((p) => !seen.has(p));
+        const missed = (opts.mustRead ?? []).filter((p) => !seen.has(p));
         if (missed.length) {
           reminded = true;
           opts.rt.finished = undefined;
           r = {
             isError: true,
-            content: `Not yet. The plan says to read these files first; read them (read_diff or read_file), then call finish again:\n${missed.map((p) => `- ${p}`).join("\n")}`,
+            content: `Not yet. These changed files were not shown and you have not read them; read them (read_diff or read_file), then call finish again:\n${missed.map((p) => `- ${p}`).join("\n")}`,
           };
-          console.log(`  finish: ${missed.length} planned file(s) not read yet`);
+          console.log(`  finish: ${missed.length} changed file(s) not read yet`);
         }
       }
       if (r.isError) console.log(`  ${call.name}: ${r.content.split("\n")[0]}`);

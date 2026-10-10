@@ -15,11 +15,6 @@ export function resolveProvider(flagModel?: string, env = process.env): Provider
   );
 }
 
-/** The model for the triage phase: `SPRIGGS_TRIAGE_MODEL`, else the main model. */
-export function resolveTriageProvider(main: Provider, env = process.env): Provider {
-  return env.SPRIGGS_TRIAGE_MODEL ? resolveSpec(env.SPRIGGS_TRIAGE_MODEL, env) : main;
-}
-
 function resolveSpec(spec: string, env: NodeJS.ProcessEnv): Provider {
   if (!spec) {
     throw new Error(
