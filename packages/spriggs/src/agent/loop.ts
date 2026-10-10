@@ -11,7 +11,8 @@ export const LARGE_BUDGET: Budget = {
   timeoutMs: 15 * 60 * 1000,
 };
 
-const MAX_OUTPUT_TOKENS = 16_000;
+/** The most the model may write in one reply: about 90 KB of text, enough for several whole pages. */
+const MAX_OUTPUT_TOKENS = 32_000;
 
 /**
  * When one request grows past this many input tokens, the contents of older tool results are cleared
@@ -48,6 +49,7 @@ export async function runAgent(opts: {
   const seen = new Set(opts.inlineShown ?? []);
   let nudged = false;
   let reminded = false;
+  let cutOnce = false;
 
   for (let turn = 1; turn <= budget.maxTurns; turn++) {
     if (Date.now() - started > budget.timeoutMs)
@@ -72,6 +74,17 @@ export async function runAgent(opts: {
 
     if (c.calls.length === 0) {
       if (opts.rt.finished) break;
+      // A reply cut at the output limit arrives with no usable tool call. One retry with clear advice.
+      if (c.stop === "max_tokens" || c.stop === "length") {
+        if (cutOnce) throw new Error("the model's reply was cut at the output limit twice");
+        cutOnce = true;
+        turns.push({
+          role: "user",
+          text: `Your reply was cut at the output limit of ${MAX_OUTPUT_TOKENS} tokens. Write the file in a shorter form, or split the page into two files, and try again.`,
+        });
+        console.log("  reply cut at the output limit; asked for a shorter one");
+        continue;
+      }
       if (nudged) throw new Error("the model stopped without calling finish");
       nudged = true;
       turns.push({ role: "user", text: "Call the finish tool now with the result of this run." });
