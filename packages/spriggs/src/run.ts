@@ -10,7 +10,7 @@ import { type Entry, renderEntry, writeEntry } from "./entry/writer";
 import type { Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { signals } from "./gate/signals";
-import { diffByFile } from "./git";
+import { diffByFile, git } from "./git";
 import { type RunReport, renderComment, verdictLine } from "./report";
 
 export type RunOptions = { cwd?: string; model?: string };
@@ -29,12 +29,25 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     return 0;
   }
 
+  // Drift: same description as the last run, but the head moved. Noted, never blocking.
+  const marker = { bodyHash: Bun.hash(ctx.pr?.body ?? "").toString(16), headSha: ctx.head.sha };
+  const prev = await forge.previousRun();
+  let staleCommits: number | undefined;
+  if (prev && prev.bodyHash === marker.bodyHash && prev.headSha !== ctx.head.sha) {
+    try {
+      staleCommits =
+        Number(git(["rev-list", "--count", `${prev.headSha}..${ctx.head.sha}`], cwd)) || undefined;
+    } catch {
+      staleCommits = undefined; // force-push or unknown commit: nothing to count
+    }
+  }
+
   const verdict = decide(s);
   console.log(`gate: ${verdict.outcome}${"reason" in verdict ? ` (${verdict.reason})` : ""}`);
 
   const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
   const report = async (label: Label, status: [StatusState, string], runReport?: RunReport) => {
-    await forge.upsertComment(renderComment(s, verdict, runReport));
+    await forge.upsertComment(renderComment(s, verdict, runReport, staleCommits), marker);
     await forge.setLabel(label);
     await forge.setStatus(...status);
     return 0;
@@ -79,6 +92,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       verdict,
       title: ctx.pr?.title ?? ctx.head.subject,
       body: ctx.pr?.body ?? "",
+      commits: ctx.commits,
+      ...(staleCommits ? { staleCommits } : {}),
       files: ctx.files,
       diffs: rt.diffs,
       index,

@@ -69,7 +69,7 @@ function words(text: string): number {
 export function signals(ctx: ForgeContext, config?: PortolanConfig): Signals {
   const body = ctx.pr?.body ?? "";
   const title = ctx.pr?.title ?? ctx.head.subject;
-  const subjects = [title, ...(ctx.pr?.commits ?? [])];
+  const subjects = [title, ...ctx.commits.map((c) => c.subject)];
   const cc = subjects.map(conventional).find(Boolean);
   const breaking = subjects.some((s) => conventional(s)?.bang) || /BREAKING[ -]CHANGE:/.test(body);
 

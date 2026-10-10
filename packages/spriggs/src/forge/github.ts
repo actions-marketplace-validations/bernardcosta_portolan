@@ -1,9 +1,17 @@
 import { Octokit } from "@octokit/rest";
 import { type ForgeContext, SPRIGGS_EMAIL, SPRIGGS_NAME } from "../context";
-import { changedFiles, commitInfo, commitSubjects, git } from "../git";
-import { type Forge, LABELS, type Label, type PushResult, type StatusState } from "./types";
+import { changedFiles, commitInfo, commitMessages, git } from "../git";
+import {
+  type Forge,
+  LABELS,
+  type Label,
+  type PushResult,
+  type RunMarker,
+  type StatusState,
+} from "./types";
 
-const MARKER = "<!-- spriggs -->";
+const MARKER = "<!-- spriggs";
+const MARKER_RE = /^<!-- spriggs body=([0-9a-f]+) head=([0-9a-f]+) -->/;
 
 /** The parts of the pull_request webhook payload Spriggs reads. */
 type PullRequestEvent = {
@@ -83,21 +91,31 @@ export class GitHubForge implements Forge {
         body: pr.body ?? "",
         author: pr.user.login,
         labels: pr.labels.map((l) => l.name),
-        commits: commitSubjects(pr.base.sha, pr.head.sha, this.cwd),
       },
+      commits: commitMessages(pr.base.sha, pr.head.sha, this.cwd),
       event: { action: event.action, bodyChanged: event.changes?.body !== undefined },
       files: changedFiles(diffRevisions, this.cwd),
       diffRevisions,
     };
   }
 
-  async upsertComment(markdown: string): Promise<void> {
-    const body = `${MARKER}\n${markdown}`;
+  private async stickyComment(): Promise<{ id: number; body: string } | undefined> {
     const comments = await this.octokit.paginate(this.octokit.issues.listComments, {
       ...this.target,
       per_page: 100,
     });
-    const existing = comments.find((c) => c.body?.startsWith(MARKER));
+    const found = comments.find((c) => c.body?.startsWith(MARKER));
+    return found ? { id: found.id, body: found.body ?? "" } : undefined;
+  }
+
+  async previousRun(): Promise<RunMarker | undefined> {
+    const m = MARKER_RE.exec((await this.stickyComment())?.body ?? "");
+    return m?.[1] && m[2] ? { bodyHash: m[1], headSha: m[2] } : undefined;
+  }
+
+  async upsertComment(markdown: string, marker: RunMarker): Promise<void> {
+    const body = `<!-- spriggs body=${marker.bodyHash} head=${marker.headSha} -->\n${markdown}`;
+    const existing = await this.stickyComment();
     if (existing) {
       await this.octokit.issues.updateComment({ ...this.target, comment_id: existing.id, body });
     } else {

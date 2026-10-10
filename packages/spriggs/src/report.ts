@@ -31,7 +31,12 @@ export type RunReport =
   | { kind: "none"; notes: string; usage: Usage; model: string; turns: number }
   | { kind: "failed"; reason: string; usage?: Usage; model?: string };
 
-export function renderComment(s: Signals, v: Verdict, run?: RunReport): string {
+export function renderComment(
+  s: Signals,
+  v: Verdict,
+  run?: RunReport,
+  staleCommits?: number,
+): string {
   const rows: [string, string][] = [
     ["Description", yes(s.descriptionPresent)],
     ["Why section", yes(s.hasWhy)],
@@ -54,6 +59,12 @@ export function renderComment(s: Signals, v: Verdict, run?: RunReport): string {
     "",
     `Gate: ${verdictLine(v, s)}`,
     "",
+    ...(staleCommits
+      ? [
+          `> **Description unchanged** since ${staleCommits} newer commit(s). Check that the Why still holds.`,
+          "",
+        ]
+      : []),
     ...(run ? [...renderRun(run), ""] : []),
     "<details><summary>Gate signals</summary>",
     "",

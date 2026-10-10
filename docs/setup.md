@@ -6,6 +6,7 @@ covers:
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/gate/decide.ts
+  - packages/spriggs/src/report.ts
   - .github/workflows/spriggs.yml
   - .env.example
 ---
@@ -38,7 +39,7 @@ Full usage: `portolan spriggs run [--local --base <ref> [--reason <text>]] [--mo
 - `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
 - `--model <provider/model>` overrides `SPRIGGS_MODEL`.
 
-In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The commit messages between the merge-base and `HEAD` are passed to the model too. A local run is not skipped when the head commit is Spriggs's own, so you can run right after a Spriggs commit. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
 
 ## Model
 
@@ -58,6 +59,8 @@ A missing model or key fails the run before any network call, naming the missing
 
 Each run posts one sticky comment with the gate signals and verdict, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits.
 
+The model sees the subject and body of each commit in the pull request, oldest first. If the description has not changed since the last run but new commits were pushed, the comment says **Description unchanged** with the number of newer commits, and the model is told to prefer the commit messages for those commits. This note never blocks the run.
+
 ## Layout
 
 ```
@@ -68,4 +71,4 @@ docs/               this repo's own docs, per the /docs contract
 
 ## Pull requests
 
-Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff but marks the run `docs:partial` and asks for one. With no reason and a diff over 1500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`.
+Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff but marks the run `docs:partial` and asks for one. With no reason and a diff over 1500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`. When you push new commits that change the intent, update the description too, or write the reason in the commit messages.

@@ -1,5 +1,7 @@
 // Normalised pull request information. Built by a Forge; read by the gate and the agent.
 
+export type Commit = { subject: string; body: string };
+
 export type ChangedFile = {
   path: string;
   additions: number;
@@ -17,9 +19,9 @@ export type ForgeContext = {
     body: string;
     author: string;
     labels: string[];
-    /** Commit subjects in the PR, oldest first. */
-    commits: string[];
   };
+  /** Commits between base and head, oldest first. Subjects feed the gate; the model sees bodies too. */
+  commits: Commit[];
   /** The workflow event that started this run. Absent in --local mode. */
   event?: { action: string; bodyChanged: boolean };
   files: ChangedFile[];

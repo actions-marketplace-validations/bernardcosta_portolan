@@ -1,4 +1,4 @@
-import type { ChangedFile } from "./context";
+import type { ChangedFile, Commit } from "./context";
 
 export function git(args: string[], cwd = process.cwd()): string {
   const p = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
@@ -43,11 +43,16 @@ export function diffByFile(revisions: string[], cwd?: string): Map<string, strin
   return chunks;
 }
 
-export function commitSubjects(base: string, head: string, cwd?: string): string[] {
-  return git(["log", "--reverse", "--format=%s", `${base}..${head}`], cwd)
-    .trim()
-    .split("\n")
-    .filter(Boolean);
+export function commitMessages(base: string, head: string, cwd?: string): Commit[] {
+  // Records separated by \x1e, subject and body by \x1f.
+  return git(["log", "--reverse", "--format=%s%x1f%b%x1e", `${base}..${head}`], cwd)
+    .split("\x1e")
+    .map((rec) => rec.trim())
+    .filter(Boolean)
+    .map((rec) => {
+      const [subject = "", body = ""] = rec.split("\x1f");
+      return { subject: subject.trim(), body: body.trim() };
+    });
 }
 
 export function commitInfo(

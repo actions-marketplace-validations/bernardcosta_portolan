@@ -1,6 +1,6 @@
 import type { ForgeContext } from "../context";
-import { changedFiles, commitInfo, git, untrackedFiles } from "../git";
-import type { Forge, Label, PushResult, StatusState } from "./types";
+import { changedFiles, commitInfo, commitMessages, git, untrackedFiles } from "../git";
+import type { Forge, Label, PushResult, RunMarker, StatusState } from "./types";
 
 /** `--local --base <ref>`: the working copy against the merge-base with <ref>. Prints instead of posting. */
 export class LocalForge implements Forge {
@@ -28,17 +28,21 @@ export class LocalForge implements Forge {
               body: `## Why\n\n${this.reason}\n`,
               author: "",
               labels: [],
-              commits: [],
             },
           }
         : {}),
+      commits: commitMessages(mergeBase, "HEAD", this.cwd),
       // No second revision: the diff includes uncommitted changes in the working tree.
       files: [...changedFiles([mergeBase], this.cwd), ...(await untrackedFiles(this.cwd))],
       diffRevisions: [mergeBase],
     };
   }
 
-  async upsertComment(markdown: string): Promise<void> {
+  async previousRun(): Promise<RunMarker | undefined> {
+    return undefined;
+  }
+
+  async upsertComment(markdown: string, _marker: RunMarker): Promise<void> {
     console.log(`\n--- comment ---\n${markdown}\n--- end comment ---`);
   }
 

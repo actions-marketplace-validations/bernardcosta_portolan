@@ -34,6 +34,7 @@ export function skipReason(ctx: ForgeContext, s: Signals): string | undefined {
     }
     return undefined; // a rerun after the author added the reason; the head may be Spriggs's own commit
   }
-  if (s.headBySpriggs) return "head commit is Spriggs's own";
+  // A CI rule: no self-triggering. Locally a developer may run right after a Spriggs commit.
+  if (s.headBySpriggs && ctx.event) return "head commit is Spriggs's own";
   return undefined;
 }

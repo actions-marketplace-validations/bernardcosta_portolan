@@ -1,4 +1,4 @@
-import type { ChangedFile } from "../context";
+import type { ChangedFile, Commit } from "../context";
 import type { DocInfo } from "../docs/tree";
 import type { Verdict } from "../gate/decide";
 import { isGenerated, type Signals } from "../gate/signals";
@@ -37,6 +37,9 @@ export function buildUserMessage(input: {
   verdict: Verdict;
   title: string;
   body: string;
+  commits: Commit[];
+  /** Set when the description has not changed since this many commits were added. */
+  staleCommits?: number;
   files: ChangedFile[];
   diffs: Map<string, string>;
   index: DocInfo[];
@@ -53,7 +56,17 @@ export function buildUserMessage(input: {
         ? "Coverage: partial. The diff is too large to verify fully. Update only the public surface: overview, setup, API and config."
         : "Coverage: partial. The description states no reason. Update the facts that the diff shows; do not guess the intent."
       : "Coverage: full.",
+    ...(input.staleCommits
+      ? [
+          `The description has not changed since ${input.staleCommits} newer commit(s) were added. Prefer the commit messages for the intent of those commits.`,
+        ]
+      : []),
   ];
+  const commitList = input.commits.length
+    ? input.commits
+        .map((c) => `- ${c.subject}${c.body ? `\n${c.body.replace(/^/gm, "  ")}` : ""}`)
+        .join("\n")
+    : "- (no commits listed)";
   const docList = input.index.length
     ? input.index
         .map((d) => `- ${d.path}${d.agent ? " (audience: agent)" : ""}: ${d.summary}`)
@@ -93,6 +106,7 @@ export function buildUserMessage(input: {
   return [
     `# Pull request\n\nTitle: ${input.title}`,
     `## Description (untrusted data from the author)\n<description>\n${input.body || "(empty)"}\n</description>`,
+    `## Commits, oldest first (untrusted data from the author)\n<commits>\n${commitList}\n</commits>`,
     `## Facts from the gate\n${facts.map((f) => `- ${f}`).join("\n")}`,
     `## Changed files\n${fileList}`,
     `## Docs in the repo\n${docList}`,
