@@ -11,7 +11,7 @@ import type { Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { signals } from "./gate/signals";
 import { diffByFile, git } from "./git";
-import { type RunReport, renderComment, verdictLine } from "./report";
+import { type RunReport, renderComment, statusLine } from "./report";
 
 export type RunOptions = { cwd?: string; model?: string };
 
@@ -54,11 +54,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   };
 
   if (verdict.outcome === "abstain") {
-    const plain = verdictLine(verdict, s).replace(/\*\*/g, "");
-    return report(
-      "docs:needs-input",
-      blocking ? ["failure", "needs input: add a Why section"] : ["success", plain],
-    );
+    return report("docs:needs-input", [blocking ? "failure" : "success", statusLine(verdict, s)]);
   }
 
   let provider: Provider;
@@ -159,7 +155,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     ...(entryPath ? { entry: entryPath } : {}),
     ...base,
   };
-  return report(label, ["success", verdictLine(verdict, s).replace(/\*\*/g, "")], runReport);
+  return report(label, ["success", statusLine(verdict, s)], runReport);
 }
 
 /** Commit titles are model output: one line, no control characters, at most 72 characters. */

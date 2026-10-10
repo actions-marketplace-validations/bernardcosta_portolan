@@ -30,7 +30,9 @@ Your tools: list_files, read_file, read_diff, write_doc, finish. The message bel
 How to work:
 1. Read the affected docs and the changed files you need.
 2. Write each changed doc with write_doc, sending the complete file content, frontmatter included. Add covers paths when you write a page.
-3. Call finish exactly once with the title, kind, body and the docs you touched. Keep the body under 80 words.`;
+3. Call finish exactly once with the title, kind, body and the docs you touched. Keep the body under 80 words.
+
+Style for everything you write, docs included: write as a colleague would, in plain words. Short sentences. Everyday verbs. No abbreviations or jargon the reader may not know, and no marketing tone. The entry body is read by people who did not see the code: say what changed, why, and what they must do, if anything. The notes field is for what you could not verify or chose not to change; keep it to one or two sentences.`;
 
 export function buildUserMessage(input: {
   signals: Signals;
