@@ -47,12 +47,12 @@ export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport):
   const readCount = cov ? `I read ${n(cov.read)} of ${n(cov.changed)} changed files` : "";
   if (v.outcome === "partial") {
     const extra = cov?.missed.length
-      ? ` I also ran out of budget before reading ${n(cov.missed.length)} changed files; they are listed below.`
+      ? ` I also finished without reading ${n(cov.missed.length)} changed files; they are listed below.`
       : "";
     return `**docs:partial** — I checked only part of this change. The description does not say why it is made, so I updated what the code shows and did not guess the intent. Add a **Why** section to the description and I will run again.${extra}`;
   }
   if (label === "docs:partial") {
-    return `**docs:partial** — This change is big (${size}). ${readCount}, then my budget ran out. The files I did not read are listed below; their changes may be missing from the docs.`;
+    return `**docs:partial** — ${readCount} (${size}). The files I did not read are listed below; their changes may be missing from the docs.`;
   }
   if (label === "docs:none") {
     return `**docs:none** — I checked this whole change (${size}). The docs already match it, and it needs no entry in the change feed.`;
@@ -67,7 +67,7 @@ export function statusLine(v: Verdict, s: Signals, missed = 0): string {
   switch (v.outcome) {
     case "proceed":
       return missed
-        ? `partial: ${missed} changed files not read before the budget ran out`
+        ? `partial: ${missed} changed files not read`
         : `done: reason stated, ${n(s.linesChanged)} lines checked`;
     case "partial":
       return "partial: no reason in the description, add a Why section";
@@ -135,7 +135,7 @@ function renderRun(run: RunReport): string[] {
 
   const note = run.notes ? [`A note from the run: ${run.notes}`, ""] : [];
   const missed = run.coverage.missed.length
-    ? ["**Not read, budget ran out:**", "", ...run.coverage.missed.map((p) => `- \`${p}\``), ""]
+    ? ["**Not read:**", "", ...run.coverage.missed.map((p) => `- \`${p}\``), ""]
     : [];
   const files =
     run.kind === "docs" && (run.written.length || run.entry)
