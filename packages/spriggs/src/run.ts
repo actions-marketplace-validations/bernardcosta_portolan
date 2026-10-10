@@ -1,7 +1,7 @@
 import { type AgentResult, LARGE_BUDGET, runAgent, SMALL_BUDGET } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import { buildUserMessage } from "./agent/prompt";
-import type { Provider, Usage } from "./agent/providers/types";
+import { ContextWindowError, type Provider, type Usage } from "./agent/providers/types";
 import { createRuntime, revertWrites } from "./agent/tools";
 import { loadPortolanConfig } from "./docs/portolan";
 import { affectedDocs, docsIndex } from "./docs/tree";
@@ -106,6 +106,11 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       budget: verdict.tier === "large" ? LARGE_BUDGET : SMALL_BUDGET,
     });
   } catch (e) {
+    if (e instanceof ContextWindowError) {
+      return fail(
+        `This change does not fit the context window of ${provider.model}. Use a model with a larger window, lower SPRIGGS_CONTEXT_TOKENS so older tool results are cleared sooner, or split the pull request.`,
+      );
+    }
     return fail(`The agent run failed: ${(e as Error).message}`);
   }
   const { result, usage, turns } = agent;

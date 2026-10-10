@@ -13,6 +13,15 @@ export const LARGE_BUDGET: Budget = {
 
 const MAX_OUTPUT_TOKENS = 16_000;
 
+/**
+ * When one request grows past this many input tokens, the contents of older tool results are cleared
+ * from the history (the model can read a file again). The last few tool turns stay intact.
+ * `SPRIGGS_CONTEXT_TOKENS` sets it; the default suits a 1M window. Set about 120000 for a 200K model.
+ */
+const CONTEXT_SOFT_LIMIT = Number(process.env.SPRIGGS_CONTEXT_TOKENS) || 600_000;
+const KEEP_RECENT_TOOL_TURNS = 3;
+const CLEARED = "[cleared to save context; call the tool again if you need this content]";
+
 export type AgentResult = {
   result: FinishResult;
   usage: Usage;
@@ -56,6 +65,7 @@ export async function runAgent(opts: {
     usage.output += c.usage.output;
     usage.cached += c.usage.cached;
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
+    if (c.usage.input > CONTEXT_SOFT_LIMIT) clearOldToolResults(turns);
     console.log(
       `turn ${turn}: ${c.calls.map((x) => x.name).join(", ") || `no tool call (${c.stop})`}`,
     );
@@ -95,6 +105,22 @@ export async function runAgent(opts: {
   }
   if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turns.length, seen };
   throw new Error(`agent loop hit the ${budget.maxTurns} turn limit without finishing`);
+}
+
+/** Replaces the content of tool results older than the last few tool turns. Ids and order stay. */
+function clearOldToolResults(turns: Turn[]): void {
+  const toolTurns = turns.filter((t) => t.role === "tool");
+  let cleared = 0;
+  for (const t of toolTurns.slice(0, -KEEP_RECENT_TOOL_TURNS)) {
+    if (t.role !== "tool") continue;
+    for (const r of t.results) {
+      if (r.content !== CLEARED && r.content.length > CLEARED.length) {
+        r.content = CLEARED;
+        cleared++;
+      }
+    }
+  }
+  if (cleared) console.log(`  context: cleared ${cleared} older tool result(s)`);
 }
 
 function pathOf(input: unknown): string | undefined {
