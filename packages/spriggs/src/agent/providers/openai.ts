@@ -1,5 +1,11 @@
 import OpenAI from "openai";
-import type { Completion, Provider, ToolDef, Turn } from "./types";
+import {
+  type Completion,
+  ContextWindowError,
+  type Provider,
+  type ToolDef,
+  type Turn,
+} from "./types";
 
 /** Chat Completions with tools. Covers OpenAI, OpenRouter and other compatible endpoints via `baseURL`. */
 export class OpenAIProvider implements Provider {
@@ -19,15 +25,30 @@ export class OpenAIProvider implements Provider {
     tools: ToolDef[];
     maxTokens: number;
   }): Promise<Completion> {
-    const response = await this.client.chat.completions.create({
-      model: this.model,
-      max_completion_tokens: req.maxTokens,
-      messages: [{ role: "system", content: req.system }, ...req.turns.flatMap(toMessages)],
-      tools: req.tools.map((t) => ({
-        type: "function",
-        function: { name: t.name, description: t.description, parameters: t.schema, strict: true },
-      })),
-    });
+    const response = await this.client.chat.completions
+      .create({
+        model: this.model,
+        max_completion_tokens: req.maxTokens,
+        messages: [{ role: "system", content: req.system }, ...req.turns.flatMap(toMessages)],
+        tools: req.tools.map((t) => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.schema,
+            strict: true,
+          },
+        })),
+      })
+      .catch((e: unknown) => {
+        if (
+          e instanceof OpenAI.BadRequestError &&
+          /context_length|context length|too many tokens/i.test(e.message)
+        ) {
+          throw new ContextWindowError(this.model, e.message);
+        }
+        throw e;
+      });
     const choice = response.choices[0];
     if (!choice) throw new Error("provider returned no choices");
     const message = choice.message;

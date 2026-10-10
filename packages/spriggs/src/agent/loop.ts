@@ -11,7 +11,17 @@ export const LARGE_BUDGET: Budget = {
   timeoutMs: 15 * 60 * 1000,
 };
 
-const MAX_OUTPUT_TOKENS = 16_000;
+/** The most the model may write in one reply: about 90 KB of text, enough for several whole pages. */
+const MAX_OUTPUT_TOKENS = 32_000;
+
+/**
+ * When one request grows past this many input tokens, the contents of older tool results are cleared
+ * from the history (the model can read a file again). The last few tool turns stay intact.
+ * `SPRIGGS_CONTEXT_TOKENS` sets it; the default suits a 1M window. Set about 120000 for a 200K model.
+ */
+const CONTEXT_SOFT_LIMIT = Number(process.env.SPRIGGS_CONTEXT_TOKENS) || 600_000;
+const KEEP_RECENT_TOOL_TURNS = 3;
+const CLEARED = "[cleared to save context; call the tool again if you need this content]";
 
 export type AgentResult = {
   result: FinishResult;
@@ -39,6 +49,7 @@ export async function runAgent(opts: {
   const seen = new Set(opts.inlineShown ?? []);
   let nudged = false;
   let reminded = false;
+  let cutOnce = false;
 
   for (let turn = 1; turn <= budget.maxTurns; turn++) {
     if (Date.now() - started > budget.timeoutMs)
@@ -56,12 +67,24 @@ export async function runAgent(opts: {
     usage.output += c.usage.output;
     usage.cached += c.usage.cached;
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
+    if (c.usage.input > CONTEXT_SOFT_LIMIT) clearOldToolResults(turns);
     console.log(
       `turn ${turn}: ${c.calls.map((x) => x.name).join(", ") || `no tool call (${c.stop})`}`,
     );
 
     if (c.calls.length === 0) {
       if (opts.rt.finished) break;
+      // A reply cut at the output limit arrives with no usable tool call. One retry with clear advice.
+      if (c.stop === "max_tokens" || c.stop === "length") {
+        if (cutOnce) throw new Error("the model's reply was cut at the output limit twice");
+        cutOnce = true;
+        turns.push({
+          role: "user",
+          text: `Your reply was cut at the output limit of ${MAX_OUTPUT_TOKENS} tokens. Write the file in a shorter form, or split the page into two files, and try again.`,
+        });
+        console.log("  reply cut at the output limit; asked for a shorter one");
+        continue;
+      }
       if (nudged) throw new Error("the model stopped without calling finish");
       nudged = true;
       turns.push({ role: "user", text: "Call the finish tool now with the result of this run." });
@@ -95,6 +118,22 @@ export async function runAgent(opts: {
   }
   if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turns.length, seen };
   throw new Error(`agent loop hit the ${budget.maxTurns} turn limit without finishing`);
+}
+
+/** Replaces the content of tool results older than the last few tool turns. Ids and order stay. */
+function clearOldToolResults(turns: Turn[]): void {
+  const toolTurns = turns.filter((t) => t.role === "tool");
+  let cleared = 0;
+  for (const t of toolTurns.slice(0, -KEEP_RECENT_TOOL_TURNS)) {
+    if (t.role !== "tool") continue;
+    for (const r of t.results) {
+      if (r.content !== CLEARED && r.content.length > CLEARED.length) {
+        r.content = CLEARED;
+        cleared++;
+      }
+    }
+  }
+  if (cleared) console.log(`  context: cleared ${cleared} older tool result(s)`);
 }
 
 function pathOf(input: unknown): string | undefined {

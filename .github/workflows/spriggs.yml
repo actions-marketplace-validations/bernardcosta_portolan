@@ -16,6 +16,8 @@ permissions:
 
 jobs:
   spriggs:
+    # Spriggs's own docs commits never start a run. The harness checks this too; this line saves the runner.
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

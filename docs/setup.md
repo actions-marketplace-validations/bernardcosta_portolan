@@ -6,6 +6,7 @@ covers:
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/agent/tools.ts
+  - packages/spriggs/src/agent/providers/types.ts
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/report.ts
@@ -59,7 +60,7 @@ A missing model or key fails the run before any network call, naming the missing
 
 `.github/workflows/spriggs.yml` runs `bun run spriggs run` on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions.
 
-Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
+Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. For Spriggs's own pushes the job does not start at all: the workflow skips it when the actor is `github-actions[bot]`, and the harness checks again. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
 
 The status is `success` in most cases. It is `failure` when the run fails (missing model or key, agent error, failed post-run check), which also sets `docs:needs-input`. When the gate stops, the status is `failure` only if the change is breaking or the environment variable `SPRIGGS_BLOCKING` is `true`; otherwise it stays `success`.
 
@@ -79,6 +80,16 @@ The budget depends on the size of the change, counted in changed lines with gene
 The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
 
 Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read:**, and the change entry records partial coverage. A run that runs out of turns, tokens or time before it finishes fails instead and sets `docs:needs-input`.
+
+### Output limit
+
+The model may write up to 32,000 tokens in one reply, and one doc file written with `write_doc` may be up to 80,000 characters. If a reply is cut at the output limit, Spriggs asks the model once to write the file in a shorter form or split it into two files, and logs `reply cut at the output limit; asked for a shorter one`. If the next reply is cut too, the run fails and sets `docs:needs-input`.
+
+### Context window
+
+Once a single request to the model goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window), Spriggs clears the contents of tool results older than the last three tool turns from the history. The model can call the tool again if it needs that content. The console logs `context: cleared N older tool result(s)`. For a model with a 200K-token window, set `SPRIGGS_CONTEXT_TOKENS` to about 120000.
+
+If a request is still larger than the model's context window, the provider rejects it; nothing is cut. The run fails and sets `docs:needs-input`, with a message that says the change does not fit the model's window. To fix it, use a model with a larger window, lower `SPRIGGS_CONTEXT_TOKENS` so older tool results are cleared sooner, or split the pull request.
 
 ## Layout
 

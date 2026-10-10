@@ -8,7 +8,8 @@ import type { ToolDef } from "./providers/types";
 // The five tools are the security boundary. The model has nothing else: no shell, no network.
 
 const READ_CAP = 64_000;
-const WRITE_CAP = 100_000;
+/** One doc file, in characters. Below what one reply can carry (MAX_OUTPUT_TOKENS in loop.ts). */
+const WRITE_CAP = 80_000;
 
 export type FinishResult = {
   title: string;
