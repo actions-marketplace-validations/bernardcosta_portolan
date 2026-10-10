@@ -20,7 +20,8 @@ export function splitFrontmatter(text: string): { data: Frontmatter; body: strin
 }
 
 export function renderFrontmatter(data: Frontmatter, body: string): string {
-  return `---\n${stringify(data).trimEnd()}\n---\n\n${body.trim()}\n`;
+  // lineWidth 0: never fold a long title across lines.
+  return `---\n${stringify(data, { lineWidth: 0 }).trimEnd()}\n---\n\n${body.trim()}\n`;
 }
 
 const isStringArray = (v: unknown): v is string[] =>

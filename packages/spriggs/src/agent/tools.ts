@@ -33,11 +33,11 @@ export function createRuntime(cwd = process.cwd()): ToolRuntime {
 }
 
 /** Puts every file the model wrote back the way it was. */
-export function revertWrites(rt: ToolRuntime): void {
+export async function revertWrites(rt: ToolRuntime): Promise<void> {
   for (const [path, original] of rt.originals) {
     const abs = join(rt.cwd, path);
     if (original === null) rmSync(abs, { force: true });
-    else Bun.write(abs, original);
+    else await Bun.write(abs, original);
   }
   rt.originals.clear();
 }

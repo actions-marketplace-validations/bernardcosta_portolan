@@ -6,7 +6,7 @@ import { createRuntime, revertWrites } from "./agent/tools";
 import { loadPortolanConfig } from "./docs/portolan";
 import { affectedDocs, docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
-import { type Entry, writeEntry } from "./entry/writer";
+import { type Entry, renderEntry, writeEntry } from "./entry/writer";
 import type { Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { signals } from "./gate/signals";
@@ -59,8 +59,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   }
 
   const rt = createRuntime(cwd);
-  const fail = (reason: string, extra: { usage?: Usage } = {}) => {
-    revertWrites(rt);
+  const fail = async (reason: string, extra: { usage?: Usage } = {}) => {
+    await revertWrites(rt);
     console.error(`failed: ${reason}`);
     return report("docs:needs-input", ["failure", reason.slice(0, 140)], {
       kind: "failed",
@@ -100,7 +100,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   }
   const { result, usage, turns } = agent;
 
-  const check = await enforce(rt, { strictTree: ctx.pr !== undefined });
+  // The tree check only in CI: a local working copy has the author's own uncommitted changes.
+  const check = await enforce(rt, { strictTree: ctx.event !== undefined });
   if (!check.ok) return fail(`Post-run check failed: ${check.reason}`, { usage });
 
   // kind and breaking are mechanical where the commit type decides; the model fills the gaps.
@@ -122,10 +123,23 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       body: result.body,
     };
     try {
-      entryPath = await writeEntry(cwd, entry);
+      if (ctx.event) {
+        entryPath = await writeEntry(cwd, entry);
+      } else {
+        // No pull request number in --local mode: show the entry, do not write a `pr: 0` file.
+        console.log(
+          `\n--- entry (not written in --local mode) ---\n${renderEntry(entry)}--- end entry ---`,
+        );
+        entryPath = "(printed)";
+      }
     } catch (e) {
       return fail(`Could not write the change entry: ${(e as Error).message}`, { usage });
     }
+  }
+
+  const base = { usage, model: provider.model, turns, notes: result.notes };
+  if (check.written.length === 0 && !entryPath) {
+    return report("docs:none", ["success", "no docs change needed"], { kind: "none", ...base });
   }
 
   const pushed = await forge.commitAndPush(`docs: ${oneLine(result.title)}`);
@@ -133,16 +147,11 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     console.log("superseded: the branch moved during the run");
     return 0;
   }
-
-  const base = { usage, model: provider.model, turns, notes: result.notes };
-  if (pushed === "nothing" && !entryPath) {
-    return report("docs:none", ["success", "no docs change needed"], { kind: "none", ...base });
-  }
   const label: Label = verdict.outcome === "partial" ? "docs:partial" : "docs:done";
   const runReport: RunReport = {
     kind: "docs",
     written: check.written,
-    ...(entryPath ? { entry: entryPath } : {}),
+    ...(entryPath && entryPath !== "(printed)" ? { entry: entryPath } : {}),
     ...base,
   };
   return report(label, ["success", verdictLine(verdict, s).replace(/\*\*/g, "")], runReport);

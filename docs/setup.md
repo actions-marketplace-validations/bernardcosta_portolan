@@ -1,5 +1,8 @@
 ---
 summary: Get a working copy running with Bun on the host. No Docker.
+covers:
+  - packages/spriggs/src/run.ts
+  - packages/spriggs/src/forge/local.ts
 ---
 
 # Setup
@@ -24,6 +27,8 @@ summary: Get a working copy running with Bun on the host. No Docker.
 | `bun run typecheck` | Typecheck |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
+
+In `--local` mode there is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
 
 ## Layout
 

@@ -47,8 +47,8 @@ export async function enforce(
     return { ok: false, reason: `docs edits are too large: ${lines} lines (cap ${MAX_DOC_LINES})` };
 
   if (opts.strictTree) {
+    // Lines are "XY path"; a leading space is part of XY, so no trim before the split.
     const changed = git(["status", "--porcelain"], rt.cwd)
-      .trim()
       .split("\n")
       .filter(Boolean)
       .map((line) => line.slice(3).replace(/^.* -> /, ""));
