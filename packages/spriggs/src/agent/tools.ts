@@ -65,11 +65,19 @@ export const TOOL_DEFS: ToolDef[] = [
   },
   {
     name: "read_file",
-    description: "Read a file tracked by git. Large files are cut at 64 KB.",
+    description:
+      "Read a file tracked by git, or a changed file. A response holds up to 64 KB; a longer file says how many lines it has and where to continue. Use start and lines to read it in parts.",
     schema: {
       type: "object",
-      properties: { path: { type: "string" } },
-      required: ["path"],
+      properties: {
+        path: { type: "string" },
+        start: {
+          type: "integer",
+          description: "First line to read, counted from 1. 0 means the beginning.",
+        },
+        lines: { type: "integer", description: "How many lines to read. 0 means as many as fit." },
+      },
+      required: ["path", "start", "lines"],
       additionalProperties: false,
     },
   },
@@ -182,12 +190,24 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       if (!path || (!rt.readable.has(path) && !rt.originals.has(path)))
         return err("not a readable file");
       if (!existsSync(join(rt.cwd, path))) return err("file does not exist in this revision");
-      const text = await Bun.file(join(rt.cwd, path)).text();
-      return ok(
-        text.length > READ_CAP
-          ? `${text.slice(0, READ_CAP)}\n[cut at ${READ_CAP} characters]`
-          : text,
-      );
+      const all = (await Bun.file(join(rt.cwd, path)).text()).split("\n");
+      const first = Math.max(1, Number(field(input, "start")) || 1);
+      const want = Math.max(0, Number(field(input, "lines")) || 0) || all.length;
+      if (first > all.length) return err(`the file has ${all.length} lines`);
+      // Take whole lines until the cap; a cut names the next line to ask for.
+      const taken: string[] = [];
+      let size = 0;
+      for (const line of all.slice(first - 1, first - 1 + want)) {
+        if (size + line.length + 1 > READ_CAP) break;
+        taken.push(line);
+        size += line.length + 1;
+      }
+      const last = first + taken.length - 1;
+      const tail =
+        last < all.length
+          ? `\n[lines ${first}-${last} of ${all.length}; call read_file with start=${last + 1} to continue]`
+          : "";
+      return ok(taken.join("\n") + tail);
     }
     case "read_diff": {
       const path = safeRel(field(input, "path"));
