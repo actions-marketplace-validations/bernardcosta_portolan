@@ -98,7 +98,7 @@ export const TOOL_DEFS: ToolDef[] = [
     description:
       "Create or overwrite one file under docs/. Markdown files must start with frontmatter that has a `summary`. " +
       "Not allowed: docs/api/ (generated) and docs/changes/ (Spriggs writes the entry itself). " +
-      "Keep edits small: change only the sections the diff affects.",
+      "Edit existing pages in place. A new path creates a page; see the rules for when a new page is right.",
     schema: {
       type: "object",
       properties: {

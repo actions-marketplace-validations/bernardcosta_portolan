@@ -13,11 +13,14 @@ export const MAX_DOC_LINES = 1500;
 export async function enforce(
   rt: ToolRuntime,
   opts: { strictTree: boolean },
-): Promise<{ ok: true; written: string[] } | { ok: false; reason: string }> {
+): Promise<{ ok: true; written: string[]; created: string[] } | { ok: false; reason: string }> {
   // A file written back with its original content is not a change.
   const written: string[] = [];
+  const created: string[] = [];
   for (const [path, original] of rt.originals) {
-    if ((await Bun.file(join(rt.cwd, path)).text()) !== original) written.push(path);
+    if ((await Bun.file(join(rt.cwd, path)).text()) === original) continue;
+    written.push(path);
+    if (original === null) created.push(path);
   }
   written.sort();
   for (const path of written) {
@@ -65,7 +68,7 @@ export async function enforce(
         reason: `unexpected changes outside the model's writes: ${stray.join(", ")}`,
       };
   }
-  return { ok: true, written };
+  return { ok: true, written, created };
 }
 
 /** A cheap upper bound on changed lines: lines that differ between the two texts. */

@@ -190,6 +190,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   const runReport: RunReport = {
     kind: "docs",
     written: check.written,
+    created: check.created,
     ...(entryPath ? { entry: entryPath } : {}),
     ...base,
   };

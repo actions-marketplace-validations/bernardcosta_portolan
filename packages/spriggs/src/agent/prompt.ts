@@ -22,7 +22,9 @@ The docs/ contract:
 
 Rules:
 - Accuracy first. Read before you write. For every changed file that affects what a reader of the docs must know (behaviour, commands, flags, configuration, API, data formats, setup, limits, defaults, errors people see), read its full new content with read_file, not only its diff. Tests, generated code, formatting and renames need no reading.
-- Small edits. Change only the sections the diff affects. Treat existing text as correct unless the code contradicts it. Do not rewrite sound docs.
+- Edit in place. Change the sections the diff affects. Treat existing text as correct unless the code contradicts it. Do not rewrite sound docs.
+- New pages. Create a page when the change adds a new area with its own behaviour (a service, an API, a command group, a data format), no page's covers touches it, and the facts do not fit in one section of an existing page. Put it in a free folder, give it a summary and covers, and explain the concept: what it is, how it works, how to use it. Otherwise add a section to the nearest page.
+- Do not create a page for a change that fits in a section. Do not create a page for code this pull request does not touch. Do not create a page that repeats the entry: the entry says what changed, a page says how things work. Do not split, move or delete pages. Do not create a page without covers.
 - Write for the reader named in the doc. The summary is for people; the body may be dense when audience is agent.
 - Nothing private. Docs are visible company-wide and code may not be. Describe the public surface, behaviour and contracts. Leave out secrets and exploitable detail about security fixes.
 - Evidence for every claim. Do not invent endpoints, flags or behaviour.
@@ -33,7 +35,7 @@ Your tools: list_files, read_file, read_diff, write_doc, finish. The message bel
 
 How to work:
 1. Read the affected docs and the changed files you need.
-2. Write each changed doc with write_doc, sending the complete file content, frontmatter included. Add covers paths when you write a page.
+2. Write each changed doc with write_doc, sending the complete file content, frontmatter included. Add covers paths when you write a page: the code paths the page rests on. Add covers to an existing page that has none when you edit it.
 3. Call finish exactly once with the title, kind, body and the docs you touched. Keep the body under 80 words.
 
 Style for everything you write, docs included: write as a colleague would, in plain words. Short sentences. Everyday verbs. No abbreviations or jargon the reader may not know, and no marketing tone. The entry body is read by people who did not see the code: say what changed, why, and what they must do, if anything. The notes field is for what you could not verify or chose not to change; keep it to one or two sentences.`;
@@ -73,7 +75,12 @@ export function buildUserMessage(input: {
     : "- (no commits listed)";
   const docList = input.index.length
     ? input.index
-        .map((d) => `- ${d.path}${d.agent ? " (audience: agent)" : ""}: ${d.summary}`)
+        .map((d) => {
+          if (d.path.startsWith("docs/api/"))
+            return `- ${d.path} (generated spec; read it, never edit it)`;
+          if (!d.path.endsWith(".md")) return `- ${d.path}`;
+          return `- ${d.path}${d.agent ? " (audience: agent)" : ""}: ${d.summary}`;
+        })
         .join("\n")
     : "- (no docs yet)";
   const affectedList = input.affected.length
