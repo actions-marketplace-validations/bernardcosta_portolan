@@ -22,6 +22,7 @@ export type RunReport =
   | {
       kind: "docs";
       written: string[];
+      created: string[];
       entry?: string;
       notes: string;
       usage: Usage;
@@ -142,7 +143,7 @@ function renderRun(run: RunReport): string[] {
       ? [
           "The `docs:` commit on this branch has these changes:",
           "",
-          ...run.written.map((p) => `- \`${p}\``),
+          ...run.written.map((p) => `- \`${p}\`${run.created.includes(p) ? " (new page)" : ""}`),
           ...(run.entry ? [`- \`${run.entry}\` (the change entry)`] : []),
           "",
         ]

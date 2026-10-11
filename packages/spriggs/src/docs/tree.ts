@@ -4,14 +4,21 @@ import { splitFrontmatter } from "./frontmatter";
 
 export type DocInfo = { path: string; summary: string; agent: boolean; covers: string[] };
 
-/** Every tracked markdown doc under docs/, except change entries, with its frontmatter. */
+/**
+ * Every tracked file under docs/, except change entries. Markdown docs carry their frontmatter;
+ * other files (portolan.yml, generated specs under docs/api/) are listed so the model can read them.
+ */
 export async function docsIndex(cwd = process.cwd()): Promise<DocInfo[]> {
   const paths = git(["ls-files", "docs"], cwd)
     .trim()
     .split("\n")
-    .filter((p) => p.endsWith(".md") && !p.startsWith("docs/changes/"));
+    .filter((p) => p && !p.startsWith("docs/changes/"));
   const docs: DocInfo[] = [];
   for (const path of paths) {
+    if (!path.endsWith(".md")) {
+      docs.push({ path, summary: "", agent: false, covers: [] });
+      continue;
+    }
     let text: string;
     try {
       text = await Bun.file(join(cwd, path)).text();
