@@ -1,4 +1,4 @@
-import { type ForgeContext, SPRIGGS_EMAIL } from "../context";
+import type { ForgeContext } from "../context";
 import type { PortolanConfig } from "../docs/portolan";
 
 export type Kind = "added" | "changed" | "fixed" | "removed" | "deprecated" | "internal";
@@ -97,7 +97,7 @@ export function signals(ctx: ForgeContext, config?: PortolanConfig): Signals {
       (p) => /(^|\/)[^/]*\.(ya?ml|toml|json|env\.example)$/.test(p) && !p.startsWith("docs/"),
     ),
     onlyDocsChanged: paths.length > 0 && paths.every((p) => p.startsWith("docs/")),
-    headBySpriggs: ctx.head.authorEmail === SPRIGGS_EMAIL,
+    headBySpriggs: ctx.selfEmails.includes(ctx.head.authorEmail),
     isForkOrBot:
       ctx.pr !== undefined &&
       (ctx.pr.author === "dependabot[bot]" ||

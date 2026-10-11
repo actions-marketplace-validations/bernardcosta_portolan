@@ -1,5 +1,5 @@
 import { Octokit } from "@octokit/rest";
-import { type ForgeContext, SPRIGGS_EMAIL, SPRIGGS_NAME } from "../context";
+import { DEFAULT_IDENTITY, type ForgeContext, type Identity } from "../context";
 import { changedFiles, commitInfo, commitMessages, git } from "../git";
 import {
   type Forge,
@@ -41,6 +41,7 @@ export class GitHubForge implements Forge {
   private readonly eventPath: string;
   private event?: PullRequestEvent;
   private headSha = "";
+  private identity: Identity = DEFAULT_IDENTITY;
 
   constructor(private readonly cwd = process.cwd()) {
     this.token = required("GITHUB_TOKEN");
@@ -69,6 +70,7 @@ export class GitHubForge implements Forge {
     const { pull_request: pr, repository } = event;
     const head = commitInfo(pr.head.sha, this.cwd);
     this.headSha = pr.head.sha;
+    this.identity = await this.resolveIdentity();
     const diffRevisions = [`${pr.base.sha}...${pr.head.sha}`];
     return {
       repo: {
@@ -93,10 +95,24 @@ export class GitHubForge implements Forge {
         labels: pr.labels.map((l) => l.name),
       },
       commits: commitMessages(pr.base.sha, pr.head.sha, this.cwd),
+      self: this.identity,
+      selfEmails: [...new Set([DEFAULT_IDENTITY.email, this.identity.email])],
       event: { action: event.action, bodyChanged: event.changes?.body !== undefined },
       files: changedFiles(diffRevisions, this.cwd),
       diffRevisions,
     };
+  }
+
+  /**
+   * With a GitHub App token the workflow sets SPRIGGS_APP_SLUG; commits are then authored as
+   * `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App.
+   */
+  private async resolveIdentity(): Promise<Identity> {
+    const slug = process.env.SPRIGGS_APP_SLUG;
+    if (!slug) return DEFAULT_IDENTITY;
+    const name = `${slug}[bot]`;
+    const { data } = await this.octokit.users.getByUsername({ username: name });
+    return { name, email: `${data.id}+${name}@users.noreply.github.com` };
   }
 
   private async stickyComment(): Promise<{ id: number; body: string } | undefined> {
@@ -153,9 +169,9 @@ export class GitHubForge implements Forge {
     git(
       [
         "-c",
-        `user.name=${SPRIGGS_NAME}`,
+        `user.name=${this.identity.name}`,
         "-c",
-        `user.email=${SPRIGGS_EMAIL}`,
+        `user.email=${this.identity.email}`,
         "-c",
         "core.hooksPath=/dev/null",
         "commit",

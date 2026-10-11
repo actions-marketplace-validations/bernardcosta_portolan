@@ -3,6 +3,9 @@ summary: Get a working copy running with Bun on the host. No Docker.
 covers:
   - packages/spriggs/src/run.ts
   - packages/spriggs/src/forge/local.ts
+  - packages/spriggs/src/forge/github.ts
+  - packages/spriggs/src/context.ts
+  - packages/spriggs/src/gate/signals.ts
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/agent/tools.ts
@@ -58,13 +61,29 @@ A missing model or key fails the run before any network call, naming the missing
 
 ## CI
 
-`.github/workflows/spriggs.yml` runs `bun run spriggs run` on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions.
+`.github/workflows/spriggs.yml` runs `bun run spriggs run` on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless you set up a GitHub App (see [Run as a GitHub App](#run-as-a-github-app-optional)).
 
-Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. For Spriggs's own pushes the job does not start at all: the workflow skips it when the actor is `github-actions[bot]`, and the harness checks again. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
+Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests that change only `docs/`, and Spriggs's own commits. For Spriggs's own pushes the job does not start at all: the workflow skips it when the actor is `github-actions[bot]` or the App's bot, and the harness checks again. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
 
 The status is `success` in most cases. It is `failure` when the run fails (missing model or key, agent error, failed post-run check), which also sets `docs:needs-input`. When the gate stops, the status is `failure` only if the change is breaking or the environment variable `SPRIGGS_BLOCKING` is `true`; otherwise it stays `success`.
 
 The model sees the subject and body of each commit in the pull request, oldest first. If the description has not changed since the last run but new commits were pushed, the comment shows a **Heads up** note with the number of newer commits and asks whether the reason still holds. The model is told to prefer the commit messages for those commits. This note never blocks the run.
+
+### Run as a GitHub App (optional)
+
+With the workflow's own token, comments and commits appear as `github-actions[bot]`, and GitHub does not start workflows for Spriggs's pushes, so `ci` never checks the docs commit. A GitHub App fixes both: Spriggs then acts as `<your-app>[bot]`, its pushes start workflows like anyone's, and the `spriggs` job skips itself on them. Each team registers its own App; the private key never leaves the team.
+
+1. Register the App at **Settings → Developer settings → GitHub Apps → New GitHub App** (on your user or your organisation). Name it, for example `spriggs`. Any homepage URL. Untick **Webhook → Active**. Under **Repository permissions** set Contents: Read and write, Pull requests: Read and write, Commit statuses: Read and write. Leave the rest at No access. Create it.
+2. On the App's page note the **App ID** and the **slug** (the lower-case name in the App's URL). Generate a **private key** and keep the `.pem` file.
+3. Install the App on the repositories that run Spriggs: **Install App** in the left menu.
+4. In each repository set two variables and one secret:
+   ```
+   gh variable set SPRIGGS_APP_ID --body "<App ID>"
+   gh variable set SPRIGGS_APP_SLUG --body "<slug>"
+   gh secret set SPRIGGS_APP_PRIVATE_KEY < spriggs.private-key.pem
+   ```
+
+The workflow mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without the variables, nothing changes.
 
 ### Size and coverage
 

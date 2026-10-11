@@ -27,8 +27,16 @@ export type ForgeContext = {
   files: ChangedFile[];
   /** Revision arguments for `git diff` that reproduce `files`. */
   diffRevisions: string[];
+  /** The identity Spriggs commits with on this run. */
+  self: Identity;
+  /** Every email Spriggs may have committed with in this repo. The self-skip rule matches on these. */
+  selfEmails: string[];
 };
 
-/** The identity Spriggs commits with. The self-skip rule matches on the email. */
-export const SPRIGGS_NAME = "github-actions[bot]";
-export const SPRIGGS_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com";
+export type Identity = { name: string; email: string };
+
+/** The default identity: the workflow's own token. A GitHub App replaces it with `<app>[bot]`. */
+export const DEFAULT_IDENTITY: Identity = {
+  name: "github-actions[bot]",
+  email: "41898282+github-actions[bot]@users.noreply.github.com",
+};

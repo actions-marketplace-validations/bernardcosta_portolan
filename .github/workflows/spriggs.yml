@@ -17,7 +17,7 @@ permissions:
 jobs:
   spriggs:
     # Spriggs's own docs commits never start a run. The harness checks this too; this line saves the runner.
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.actor != format('{0}[bot]', vars.SPRIGGS_APP_SLUG)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +30,18 @@ jobs:
         with:
           bun-version: 1.3.11
       - run: bun install --frozen-lockfile
+      # Optional: act as a GitHub App. Set the SPRIGGS_APP_ID and SPRIGGS_APP_SLUG variables and the
+      # SPRIGGS_APP_PRIVATE_KEY secret. Without them Spriggs uses the workflow's own token.
+      - id: app
+        if: vars.SPRIGGS_APP_ID != ''
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.SPRIGGS_APP_ID }}
+          private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}
       - run: bun run spriggs run
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
+          SPRIGGS_APP_SLUG: ${{ steps.app.outputs.app-slug }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # provider/model. Leave empty to use anthropic/claude-opus-5-5 when ANTHROPIC_API_KEY is set.
           SPRIGGS_MODEL: ${{ vars.SPRIGGS_MODEL }}
