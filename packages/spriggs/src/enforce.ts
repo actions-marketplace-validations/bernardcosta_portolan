@@ -14,7 +14,12 @@ export async function enforce(
   rt: ToolRuntime,
   opts: { strictTree: boolean },
 ): Promise<{ ok: true; written: string[] } | { ok: false; reason: string }> {
-  const written = [...rt.originals.keys()].sort();
+  // A file written back with its original content is not a change.
+  const written: string[] = [];
+  for (const [path, original] of rt.originals) {
+    if ((await Bun.file(join(rt.cwd, path)).text()) !== original) written.push(path);
+  }
+  written.sort();
   for (const path of written) {
     if (
       !path.startsWith("docs/") ||
@@ -48,7 +53,8 @@ export async function enforce(
 
   if (opts.strictTree) {
     // Lines are "XY path"; a leading space is part of XY, so no trim before the split.
-    const changed = git(["status", "--porcelain"], rt.cwd)
+    // Untracked files one by one, not collapsed to their folder.
+    const changed = git(["status", "--porcelain", "--untracked-files=all"], rt.cwd)
       .split("\n")
       .filter(Boolean)
       .map((line) => line.slice(3).replace(/^.* -> /, ""));

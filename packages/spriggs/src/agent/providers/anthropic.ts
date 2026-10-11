@@ -35,7 +35,7 @@ export class AnthropicProvider implements Provider {
           strict: true,
           input_schema: t.schema as Anthropic.Tool.InputSchema,
         })),
-        messages: req.turns.map(toMessage),
+        messages: req.turns.map((t, i) => toMessage(t, i, i === req.turns.length - 1)),
       })
       .catch((e: unknown) => {
         if (
@@ -46,6 +46,9 @@ export class AnthropicProvider implements Provider {
         }
         throw e;
       });
+    if (response.stop_reason === "model_context_window_exceeded") {
+      throw new ContextWindowError(this.model, "the reply did not fit");
+    }
     if (response.stop_reason === "refusal") {
       throw new Error(`model refused: ${response.stop_details?.category ?? "unknown category"}`);
     }
@@ -71,26 +74,35 @@ export class AnthropicProvider implements Provider {
   }
 }
 
-function toMessage(turn: Turn, index: number): Anthropic.MessageParam {
+const CACHE = { cache_control: { type: "ephemeral" as const } };
+
+/**
+ * Cache breakpoints: the first user message (the stable prefix) and the last message of each request,
+ * so the next turn reuses everything sent so far. With the system prompt that is three of the four allowed.
+ */
+function toMessage(turn: Turn, index: number, last: boolean): Anthropic.MessageParam {
+  const mark = index === 0 || last ? CACHE : {};
   switch (turn.role) {
     case "user":
-      return index === 0
-        ? {
-            role: "user",
-            content: [{ type: "text", text: turn.text, cache_control: { type: "ephemeral" } }],
-          }
-        : { role: "user", content: turn.text };
-    case "assistant":
-      // Echo the content blocks back unchanged, thinking blocks included.
-      return { role: "assistant", content: turn.raw as Anthropic.ContentBlockParam[] };
+      return { role: "user", content: [{ type: "text", text: turn.text, ...mark }] };
+    case "assistant": {
+      // Echo the content blocks back unchanged, thinking blocks included. The API rejects an empty
+      // non-final assistant message, so an empty reply becomes a placeholder.
+      const raw = turn.raw as Anthropic.ContentBlockParam[];
+      return {
+        role: "assistant",
+        content: raw.length ? raw : [{ type: "text", text: "(no reply)" }],
+      };
+    }
     case "tool":
       return {
         role: "user",
-        content: turn.results.map((r) => ({
+        content: turn.results.map((r, i) => ({
           type: "tool_result",
           tool_use_id: r.id,
           content: r.content,
           is_error: r.isError,
+          ...(last && i === turn.results.length - 1 ? CACHE : {}),
         })),
       };
   }

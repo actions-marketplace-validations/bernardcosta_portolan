@@ -175,11 +175,18 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     return report(partial ? "docs:partial" : "docs:none", status, { kind: "none", ...base });
   }
 
-  const pushed = await forge.commitAndPush(`docs: ${oneLine(result.title)}`);
+  let pushed: Awaited<ReturnType<Forge["commitAndPush"]>>;
+  try {
+    pushed = await forge.commitAndPush(`docs: ${oneLine(result.title)}`);
+  } catch (e) {
+    return fail(`Could not push the docs commit: ${(e as Error).message}`, usage);
+  }
   if (pushed === "superseded") {
     console.log("superseded: the branch moved during the run");
     return 0;
   }
+  // The marker names the head after the docs commit, so the next drift count excludes it.
+  if (pushed === "pushed") marker.headSha = git(["rev-parse", "HEAD"], cwd).trim();
   const runReport: RunReport = {
     kind: "docs",
     written: check.written,

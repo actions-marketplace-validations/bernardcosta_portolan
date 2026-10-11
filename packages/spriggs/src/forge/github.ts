@@ -120,7 +120,11 @@ export class GitHubForge implements Forge {
       ...this.target,
       per_page: 100,
     });
-    const found = comments.find((c) => c.body?.startsWith(MARKER));
+    // Only Spriggs's own comment: anyone can post text that starts with the marker.
+    const own = new Set([DEFAULT_IDENTITY.name, this.identity.name]);
+    const found = comments.find(
+      (c) => c.body?.startsWith(MARKER) && c.user?.login !== undefined && own.has(c.user.login),
+    );
     return found ? { id: found.id, body: found.body ?? "" } : undefined;
   }
 
@@ -140,10 +144,14 @@ export class GitHubForge implements Forge {
   }
 
   async setLabel(label: Label): Promise<void> {
-    const current = new Set(this.ev.pull_request.labels.map((l) => l.name));
+    // The labels now, not the event payload's: a queued run's payload is older than the last run.
+    const { data } = await this.octokit.issues.listLabelsOnIssue({ ...this.target, per_page: 100 });
+    const current = new Set(data.map((l) => l.name));
     for (const other of LABELS) {
       if (other !== label && current.has(other)) {
-        await this.octokit.issues.removeLabel({ ...this.target, name: other });
+        await this.octokit.issues.removeLabel({ ...this.target, name: other }).catch((e) => {
+          if ((e as { status?: number }).status !== 404) throw e; // already gone
+        });
       }
     }
     if (!current.has(label)) {
@@ -197,7 +205,8 @@ export class GitHubForge implements Forge {
       );
     } catch (e) {
       const msg = (e as Error).message.replace(auth, "***");
-      if (/rejected|fetch first|non-fast-forward/.test(msg)) return "superseded";
+      // A race with a newer push, not a refusal such as "[remote rejected] ... protected branch".
+      if (/\[rejected\]|fetch first|non-fast-forward/.test(msg)) return "superseded";
       throw new Error(msg);
     }
     this.headSha = commitInfo("HEAD", this.cwd).sha;

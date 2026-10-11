@@ -1,6 +1,6 @@
 import { SYSTEM_PROMPT } from "./prompt";
 import type { Provider, Turn, Usage } from "./providers/types";
-import { type FinishResult, runTool, TOOL_DEFS, type ToolRuntime } from "./tools";
+import { type FinishResult, runTool, safeRel, TOOL_DEFS, type ToolRuntime } from "./tools";
 
 export type Budget = { maxTurns: number; maxTokens: number; timeoutMs: number };
 export const SMALL_BUDGET: Budget = { maxTurns: 30, maxTokens: 600_000, timeoutMs: 10 * 60 * 1000 };
@@ -54,8 +54,9 @@ export async function runAgent(opts: {
   for (let turn = 1; turn <= budget.maxTurns; turn++) {
     if (Date.now() - started > budget.timeoutMs)
       throw new Error(`agent loop timed out after ${budget.timeoutMs} ms`);
-    if (usage.input + usage.output > budget.maxTokens)
-      throw new Error(`agent loop exceeded ${budget.maxTokens} tokens`);
+    // Cached input is nearly free and counts once; every turn re-sends the whole history.
+    if (usage.input - usage.cached + usage.output > budget.maxTokens)
+      throw new Error(`agent loop exceeded ${budget.maxTokens} uncached tokens`);
 
     const c = await opts.provider.complete({
       system: SYSTEM_PROMPT,
@@ -72,19 +73,25 @@ export async function runAgent(opts: {
       `turn ${turn}: ${c.calls.map((x) => x.name).join(", ") || `no tool call (${c.stop})`}`,
     );
 
+    // A reply cut at the output limit: its tool calls, if any, are incomplete. One retry with clear advice.
+    if (c.stop === "max_tokens" || c.stop === "length") {
+      if (cutOnce) throw new Error("the model's reply was cut at the output limit twice");
+      cutOnce = true;
+      const advice = `Your reply was cut at the output limit of ${MAX_OUTPUT_TOKENS} tokens. Write the file in a shorter form, or split the page into two files, and try again.`;
+      turns.push(
+        c.calls.length
+          ? {
+              role: "tool",
+              results: c.calls.map((x) => ({ id: x.id, content: advice, isError: true })),
+            }
+          : { role: "user", text: advice },
+      );
+      console.log("  reply cut at the output limit; asked for a shorter one");
+      continue;
+    }
+
     if (c.calls.length === 0) {
       if (opts.rt.finished) break;
-      // A reply cut at the output limit arrives with no usable tool call. One retry with clear advice.
-      if (c.stop === "max_tokens" || c.stop === "length") {
-        if (cutOnce) throw new Error("the model's reply was cut at the output limit twice");
-        cutOnce = true;
-        turns.push({
-          role: "user",
-          text: `Your reply was cut at the output limit of ${MAX_OUTPUT_TOKENS} tokens. Write the file in a shorter form, or split the page into two files, and try again.`,
-        });
-        console.log("  reply cut at the output limit; asked for a shorter one");
-        continue;
-      }
       if (nudged) throw new Error("the model stopped without calling finish");
       nudged = true;
       turns.push({ role: "user", text: "Call the finish tool now with the result of this run." });
@@ -94,8 +101,13 @@ export async function runAgent(opts: {
     const results = [];
     for (const call of c.calls) {
       let r = await runTool(opts.rt, call.name, call.input);
-      const path = pathOf(call.input);
-      if (!r.isError && path && (call.name === "read_diff" || call.name === "read_file"))
+      const path = safeRel(pathOf(call.input));
+      if (
+        !r.isError &&
+        !r.partial &&
+        path &&
+        (call.name === "read_diff" || call.name === "read_file")
+      )
         seen.add(path);
       // Files not shown inline must be read before finishing. One reminder; the second finish is accepted.
       if (call.name === "finish" && !r.isError && !reminded) {
@@ -136,8 +148,8 @@ function clearOldToolResults(turns: Turn[]): void {
   if (cleared) console.log(`  context: cleared ${cleared} older tool result(s)`);
 }
 
-function pathOf(input: unknown): string | undefined {
-  const p =
-    typeof input === "object" && input !== null ? (input as { path?: unknown }).path : undefined;
-  return typeof p === "string" ? p.replace(/^\.\//, "") : undefined;
+function pathOf(input: unknown): unknown {
+  return typeof input === "object" && input !== null
+    ? (input as { path?: unknown }).path
+    : undefined;
 }

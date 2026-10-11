@@ -33,7 +33,7 @@ jobs:
       # Optional: act as a GitHub App. Set the SPRIGGS_APP_ID and SPRIGGS_APP_SLUG variables and the
       # SPRIGGS_APP_PRIVATE_KEY secret. Without them Spriggs uses the workflow's own token.
       - id: app
-        if: vars.SPRIGGS_APP_ID != ''
+        if: vars.SPRIGGS_APP_ID != '' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.SPRIGGS_APP_ID }}
