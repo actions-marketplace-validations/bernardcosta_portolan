@@ -1,7 +1,12 @@
 import type { ChangedFile, Commit } from "./context";
 
+/** Runs git. Paths with non-ASCII characters come out verbatim, not quoted. */
 export function git(args: string[], cwd = process.cwd()): string {
-  const p = Bun.spawnSync(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+  const p = Bun.spawnSync(["git", "-c", "core.quotePath=false", ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   if (p.exitCode !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${p.stderr.toString().trim()}`);
   }
@@ -10,12 +15,21 @@ export function git(args: string[], cwd = process.cwd()): string {
 
 /** `git diff --numstat` with the given revision arguments. Binary files count as 0 lines. */
 export function changedFiles(revisions: string[], cwd?: string): ChangedFile[] {
-  const out = git(["diff", "--numstat", ...revisions], cwd).trim();
-  if (!out) return [];
-  return out.split("\n").map((line) => {
-    const [additions = "0", deletions = "0", path = ""] = line.split("\t");
-    return { path, additions: Number(additions) || 0, deletions: Number(deletions) || 0 };
-  });
+  // -z: paths verbatim, NUL-separated. A rename has an empty path field, then the old and new paths.
+  const fields = git(["diff", "--numstat", "-z", ...revisions], cwd).split("\0");
+  const files: ChangedFile[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i];
+    if (!record) continue;
+    const [additions = "0", deletions = "0", path = ""] = record.split("\t");
+    if (!path) i += 2; // skip the old path; the new path is the record after it
+    files.push({
+      path: path || fields[i] || "",
+      additions: Number(additions) || 0,
+      deletions: Number(deletions) || 0,
+    });
+  }
+  return files;
 }
 
 /** New files not yet added to git, counted as all-additions. Only --local needs this. */

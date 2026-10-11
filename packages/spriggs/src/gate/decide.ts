@@ -34,6 +34,9 @@ export function decide(s: Signals, limit = maxLines()): Verdict {
 /** Why this run should do nothing, or undefined to continue. Exits 0, no status, label unchanged. */
 export function skipReason(ctx: ForgeContext, s: Signals): string | undefined {
   if (s.isForkOrBot) return "pull request from a fork or Dependabot: no secrets, read-only token";
+  // A pull request opened from the default branch would make Spriggs push to it. Never.
+  if (ctx.event && ctx.head.ref === ctx.repo.defaultBranch)
+    return "head branch is the default branch";
   if (ctx.files.length === 0) return "no changed files";
   if (s.onlyDocsChanged) return "only docs/ changed";
   if (ctx.event?.action === "edited") {

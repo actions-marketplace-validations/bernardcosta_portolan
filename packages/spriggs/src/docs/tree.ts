@@ -12,7 +12,13 @@ export async function docsIndex(cwd = process.cwd()): Promise<DocInfo[]> {
     .filter((p) => p.endsWith(".md") && !p.startsWith("docs/changes/"));
   const docs: DocInfo[] = [];
   for (const path of paths) {
-    const fm = splitFrontmatter(await Bun.file(join(cwd, path)).text());
+    let text: string;
+    try {
+      text = await Bun.file(join(cwd, path)).text();
+    } catch {
+      continue; // a dangling symlink or a file git lists but the checkout lacks
+    }
+    const fm = splitFrontmatter(text);
     const covers = Array.isArray(fm?.data.covers) ? fm.data.covers.map(String) : [];
     docs.push({
       path,

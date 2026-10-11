@@ -154,24 +154,35 @@ export const TOOL_DEFS: ToolDef[] = [
 ];
 
 /** A normalised repo-relative path, or undefined when it escapes the repo. */
-function safeRel(input: unknown): string | undefined {
+export function safeRel(input: unknown): string | undefined {
   if (typeof input !== "string" || input.includes("\0")) return undefined;
   const n = posix.normalize(input.replace(/\\/g, "/")).replace(/^\.\//, "").replace(/^\/+/, "");
   if (n === ".." || n.startsWith("../") || n.startsWith("/")) return undefined;
   return n === "." ? "" : n;
 }
 
+/** A regular file inside the repo. A tracked symlink could point at /proc or a home directory. */
+function readableFile(cwd: string, rel: string): boolean {
+  const abs = join(cwd, rel);
+  if (lstatSync(abs).isSymbolicLink()) return false;
+  return realpathSync(abs).startsWith(`${realpathSync(cwd)}/`);
+}
+
 /** The nearest existing ancestor must resolve (symlinks followed) inside the repo's docs/. */
 function insideDocs(cwd: string, rel: string): boolean {
+  mkdirSync(resolve(cwd, "docs"), { recursive: true }); // a repo adopting Spriggs may have no docs/ yet
   const docsReal = realpathSync(resolve(cwd, "docs"));
   let probe = resolve(cwd, rel);
-  if (existsSync(probe) && lstatSync(probe).isSymbolicLink()) return false;
+  try {
+    if (lstatSync(probe).isSymbolicLink()) return false; // also a dangling link
+  } catch {}
   while (!existsSync(probe)) probe = dirname(probe);
   const real = realpathSync(probe);
   return real === docsReal || real.startsWith(`${docsReal}/`);
 }
 
-type ToolResult = { content: string; isError: boolean };
+/** `partial`: the content was cut, so the file does not count as read. */
+type ToolResult = { content: string; isError: boolean; partial?: boolean };
 const ok = (content: string): ToolResult => ({ content, isError: false });
 const err = (content: string): ToolResult => ({ content, isError: true });
 const field = (input: unknown, key: string): unknown =>
@@ -191,6 +202,7 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       if (!path || (!rt.readable.has(path) && !rt.originals.has(path)))
         return err("not a readable file");
       if (!existsSync(join(rt.cwd, path))) return err("file does not exist in this revision");
+      if (!readableFile(rt.cwd, path)) return err("not a readable file");
       const all = (await Bun.file(join(rt.cwd, path)).text()).split("\n");
       const first = Math.max(1, Number(field(input, "start")) || 1);
       const want = Math.max(0, Number(field(input, "lines")) || 0) || all.length;
@@ -199,7 +211,11 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       const taken: string[] = [];
       let size = 0;
       for (const line of all.slice(first - 1, first - 1 + want)) {
-        if (size + line.length + 1 > READ_CAP) break;
+        if (size + line.length + 1 > READ_CAP) {
+          if (taken.length === 0)
+            taken.push(`${line.slice(0, READ_CAP)}\n[line cut at ${READ_CAP} characters]`);
+          break;
+        }
         taken.push(line);
         size += line.length + 1;
       }
@@ -214,11 +230,12 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       const path = safeRel(field(input, "path"));
       const chunk = path ? rt.diffs.get(path) : undefined;
       if (chunk) {
-        return ok(
-          chunk.length > READ_CAP
-            ? `${chunk.slice(0, READ_CAP)}\n[cut at ${READ_CAP} characters; use read_file for the full new content]`
-            : chunk,
-        );
+        if (chunk.length <= READ_CAP) return ok(chunk);
+        return {
+          content: `${chunk.slice(0, READ_CAP)}\n[cut at ${READ_CAP} characters; use read_file for the full new content]`,
+          isError: false,
+          partial: true,
+        };
       }
       if (path && rt.readable.has(path))
         return ok("new file, not in git yet: use read_file for its content");

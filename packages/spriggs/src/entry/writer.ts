@@ -18,19 +18,32 @@ export type Entry = {
   body: string;
 };
 
+/** Words a cut slug should not end with. */
+const STOP_WORDS = new Set(
+  "a an the of to in on for and or with as at by from instead than into when".split(" "),
+);
+
 /** Lower-case words joined by hyphens, cut at a word boundary to about 50 characters. */
 function slugify(s: string): string {
   const words = s
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "") // accents off: "é" -> "e"
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .split("-");
-  let slug = "";
+  const kept: string[] = [];
+  let length = 0;
   for (const w of words) {
-    if (slug && slug.length + w.length + 1 > 50) break;
-    slug = slug ? `${slug}-${w}` : w;
+    if (kept.length && length + w.length + 1 > 50) break;
+    kept.push(w);
+    length += w.length + (kept.length > 1 ? 1 : 0);
   }
-  return slug || "change";
+  // A cut slug should not end in "the" or "of".
+  if (kept.length < words.length) {
+    while (kept.length > 1 && STOP_WORDS.has(kept[kept.length - 1] ?? "")) kept.pop();
+  }
+  return kept.join("-") || "change";
 }
 
 /** One entry per pull request: rewrite an existing entry for this PR in place, else create one. */
