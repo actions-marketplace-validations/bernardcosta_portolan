@@ -71,10 +71,11 @@ export function signals(ctx: ForgeContext, config?: PortolanConfig): Signals {
   const title = ctx.pr?.title ?? ctx.head.subject;
   const subjects = [title, ...ctx.commits.map((c) => c.subject)];
   const cc = subjects.map(conventional).find(Boolean);
-  // `!` in a subject, or a `BREAKING CHANGE:` footer in the description or any commit body.
+  // `!` in a subject, or a `BREAKING CHANGE:` footer (at the start of a line, as the convention says)
+  // in the description or any commit body. Not the words quoted inside a sentence.
   const breaking =
     subjects.some((s) => conventional(s)?.bang) ||
-    [body, ...ctx.commits.map((c) => c.body)].some((t) => /BREAKING[ -]CHANGE:/.test(t));
+    [body, ...ctx.commits.map((c) => c.body)].some((t) => /^BREAKING[ -]CHANGE:/m.test(t));
 
   const issuePattern = config?.issues?.pattern ? new RegExp(config.issues.pattern, "g") : /#\d+/g;
   const issueIds = [...new Set(`${title}\n${body}`.match(issuePattern) ?? [])];
