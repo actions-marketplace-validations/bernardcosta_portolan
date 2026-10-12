@@ -2,12 +2,17 @@ import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync } from "node:fs"
 import { dirname, join, posix, resolve } from "node:path";
 import { validateDoc } from "../docs/frontmatter";
 import { parsePortolanYml } from "../docs/portolan";
+import { isGenerated } from "../gate/signals";
 import { git } from "../git";
 import type { ToolDef } from "./providers/types";
 
-// The five tools are the security boundary. The model has nothing else: no shell, no network.
+// The tool pool is the security boundary. The model has nothing else: no shell, no network.
+// Each agent takes a subset of the pool (see agents.ts).
+
+export type ToolName = "list_files" | "search" | "read_file" | "read_diff" | "write_doc" | "finish";
 
 const READ_CAP = 64_000;
+const SEARCH_CAP_LINES = 200;
 /** One doc file, in characters. Below what one reply can carry (MAX_OUTPUT_TOKENS in loop.ts). */
 const WRITE_CAP = 80_000;
 
@@ -61,6 +66,23 @@ export const TOOL_DEFS: ToolDef[] = [
         dir: { type: "string", description: 'Directory path relative to the repo root, or "".' },
       },
       required: ["dir"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "search",
+    description:
+      "Search the tracked files for a regular expression (git grep -E). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
+    schema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "POSIX extended regular expression." },
+        path: {
+          type: "string",
+          description: 'Directory to search under, or "" for the whole repository.',
+        },
+      },
+      required: ["pattern", "path"],
       additionalProperties: false,
     },
   },
@@ -153,6 +175,11 @@ export const TOOL_DEFS: ToolDef[] = [
   },
 ];
 
+/** The subset of the pool an agent may use, in pool order. */
+export function toolDefs(names: ToolName[]): ToolDef[] {
+  return TOOL_DEFS.filter((t) => names.includes(t.name as ToolName));
+}
+
 /** A normalised repo-relative path, or undefined when it escapes the repo. */
 export function safeRel(input: unknown): string | undefined {
   if (typeof input !== "string" || input.includes("\0")) return undefined;
@@ -196,6 +223,33 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       const prefix = dir ? `${dir}/` : "";
       const files = [...rt.readable].filter((p) => p.startsWith(prefix)).sort();
       return files.length ? ok(files.join("\n")) : err(`no tracked files under "${dir}"`);
+    }
+    case "search": {
+      const pattern = field(input, "pattern");
+      const dir = safeRel(field(input, "path") ?? "");
+      if (typeof pattern !== "string" || !pattern.trim() || pattern.length > 200)
+        return err("pattern must be 1 to 200 characters");
+      if (dir === undefined) return err("invalid path");
+      // -e keeps a pattern that starts with "-" a pattern; -I skips binary files.
+      const p = Bun.spawnSync(["git", "grep", "-n", "-I", "-E", "-e", pattern, "--", dir || "."], {
+        cwd: rt.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (p.exitCode === 1) return ok("no matches");
+      if (p.exitCode !== 0) return err(`search failed: ${p.stderr.toString().trim()}`);
+      const lines = p.stdout
+        .toString()
+        .split("\n")
+        .filter((l) => l && !isGenerated(l.slice(0, l.indexOf(":"))));
+      const shown = lines
+        .slice(0, SEARCH_CAP_LINES)
+        .map((l) => (l.length > 300 ? `${l.slice(0, 300)} [cut]` : l));
+      const tail =
+        lines.length > SEARCH_CAP_LINES
+          ? `\n[${lines.length} matches; the first ${SEARCH_CAP_LINES} are shown. Narrow the pattern or the path.]`
+          : "";
+      return ok(shown.join("\n") + tail);
     }
     case "read_file": {
       const path = safeRel(field(input, "path"));
@@ -271,6 +325,7 @@ async function writeDoc(rt: ToolRuntime, rawPath: unknown, content: unknown): Pr
   if (path.startsWith("docs/changes/"))
     return err("Spriggs writes the change entry itself; do not write under docs/changes/");
   if (!/\.(md|yml|html)$/.test(path)) return err("only .md, .yml and .html files are allowed");
+  if (path.split("/").length > 4) return err("docs/ folders go at most two levels deep");
   if (typeof content !== "string") return err("content must be a string");
   if (content.length > WRITE_CAP) return err(`content is over ${WRITE_CAP} characters`);
   if (!insideDocs(rt.cwd, path)) return err("path resolves outside docs/");
