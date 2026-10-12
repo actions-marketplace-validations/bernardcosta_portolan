@@ -20,28 +20,13 @@ jobs:
     if: github.actor != 'github-actions[bot]' && github.actor != format('{0}[bot]', vars.SPRIGGS_APP_SLUG)
     runs-on: ubuntu-latest
     steps:
+      # Dogfood: this repo is the action. Other repos write `uses: bernardcosta/portolan@main` and no checkout.
       - uses: actions/checkout@v4
+      - uses: ./
         with:
-          # The head commit, not the merge commit. Works for forks too, so the harness can skip them.
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.11
-      - run: bun install --frozen-lockfile
-      # Optional: act as a GitHub App. Set the SPRIGGS_APP_ID and SPRIGGS_APP_SLUG variables and the
-      # SPRIGGS_APP_PRIVATE_KEY secret. Without them Spriggs uses the workflow's own token.
-      - id: app
-        if: vars.SPRIGGS_APP_ID != '' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/create-github-app-token@v2
-        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # provider/model. Leave empty to use anthropic/claude-opus-5-5 when the Anthropic key is set.
+          model: ${{ vars.SPRIGGS_MODEL }}
+          # Optional GitHub App. Without it Spriggs uses the workflow's own token.
           app-id: ${{ vars.SPRIGGS_APP_ID }}
-          private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}
-      - run: bun run spriggs run
-        env:
-          GITHUB_TOKEN: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
-          SPRIGGS_APP_SLUG: ${{ steps.app.outputs.app-slug }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # provider/model. Leave empty to use anthropic/claude-opus-5-5 when ANTHROPIC_API_KEY is set.
-          SPRIGGS_MODEL: ${{ vars.SPRIGGS_MODEL }}
+          app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}

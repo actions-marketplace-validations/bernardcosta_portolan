@@ -20,7 +20,10 @@ export function maxLines(env = process.env): number {
   return Number(env.SPRIGGS_MAX_LINES) || DEFAULT_MAX_LINES;
 }
 
-/** Stage two, rules stub. A decision model slots in here later. */
+/**
+ * Stage two: rules only.
+ * TODO: a cheap model call could replace the word-count rule with "does the description state a reason?".
+ */
 export function decide(s: Signals, limit = maxLines()): Verdict {
   const reasonStated = s.hasWhy || s.bodyWords >= REASON_MIN_WORDS;
   if (s.linesChanged > limit) return { outcome: "abstain", reason: "too-large" };
