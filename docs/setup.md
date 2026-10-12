@@ -19,6 +19,7 @@ covers:
   - packages/spriggs/src/report.ts
   - .github/workflows/spriggs.yml
   - .env.example
+  - action.yml
 ---
 
 # Setup
@@ -49,7 +50,7 @@ Full usage: `portolan spriggs run [--local --base <ref> [--reason <text>]] [--mo
 - `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
 - `--model <provider/model>` overrides `SPRIGGS_MODEL`.
 
-In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The commit messages between the merge-base and `HEAD` are passed to the model too. A local run is not skipped when the head commit is Spriggs's own, so you can run right after a Spriggs commit. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The commit messages between the merge-base and `HEAD` are passed to the model too. The repo does not need an `origin` remote, so a fresh or throwaway repo works. A local run is not skipped when the head commit is Spriggs's own, so you can run right after a Spriggs commit. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
 
 ## Model
 
@@ -91,6 +92,8 @@ jobs:
 
 Inputs, all optional: `model` (`provider/model`, default `anthropic/claude-opus-5-5` when the Anthropic key is set), `anthropic-api-key`, `openai-api-key`, `openrouter-api-key`, `github-token` (default: the workflow's own token), `app-id` and `app-private-key` (see [Run as a GitHub App](#run-as-a-github-app-optional)), and `max-lines` (default 5000). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them.
 
+If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
+
 While this repository is private, other repositories can use the action only when they belong to the same owner and the repository setting **Actions → General → Access** allows it.
 
 ## CI
@@ -116,8 +119,9 @@ With the workflow's own token, comments and commits appear as `github-actions[bo
    gh variable set SPRIGGS_APP_SLUG --body "<slug>"
    gh secret set SPRIGGS_APP_PRIVATE_KEY < spriggs.private-key.pem
    ```
+5. Pass them to the action: `app-id: ${{ vars.SPRIGGS_APP_ID }}` and `app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}` under `with:`. This repository's own workflow already does.
 
-The workflow mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. For pull requests from forks, which get no secrets, the workflow skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without the variables, nothing changes.
+When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
 
 ### Size and coverage
 
@@ -132,7 +136,7 @@ The budget depends on the size of the change, counted in changed lines with gene
 
 Tokens are input tokens not served from the provider's cache, plus output tokens.
 
-The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
+The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` (the action's `max-lines` input) to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
 
 Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. A `read_diff` result cut at 64 KB does not count as seen; the model must use `read_file` for the rest. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read:**, and the change entry records partial coverage. A run that runs out of turns, tokens or time before it finishes fails instead and sets `docs:needs-input`.
 
@@ -155,9 +159,10 @@ If a request is still larger than the model's context window, the provider rejec
 ## Layout
 
 ```
+action.yml          the GitHub Action other repositories use
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
-.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests)
+.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests, through action.yml)
 ```
 
 ## Pull requests
