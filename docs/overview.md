@@ -1,5 +1,9 @@
 ---
 summary: Portolan keeps a repo's docs accurate on every pull request and publishes them to one hub for people and agents.
+covers:
+  - action.yml
+  - .github/workflows/spriggs.yml
+  - packages/spriggs/src/cli.ts
 ---
 
 # Overview
@@ -18,7 +22,7 @@ Early development. Spriggs is built first and runs on this repo's own pull reque
 
 ## How to call it
 
-Local run: `bun run spriggs run --local --base <ref>`. In CI: the `spriggs.yml` workflow runs `bun run spriggs run` (the `portolan spriggs run` CLI) on each pull request. See [setup.md](setup.md).
+In CI: Spriggs is a GitHub Action. Another repository adds a workflow step `uses: bernardcosta/portolan@main` with a provider key. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). See [setup.md](setup.md).
 
 ## Owner
 

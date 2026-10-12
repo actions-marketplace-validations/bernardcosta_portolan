@@ -15,7 +15,10 @@ export class LocalForge implements Forge {
     const mergeBase = git(["merge-base", this.baseRef, "HEAD"], this.cwd).trim();
     const head = commitInfo("HEAD", this.cwd);
     const branch = git(["rev-parse", "--abbrev-ref", "HEAD"], this.cwd).trim();
-    const remote = git(["config", "--get", "remote.origin.url"], this.cwd).trim();
+    let remote = "";
+    try {
+      remote = git(["config", "--get", "remote.origin.url"], this.cwd).trim();
+    } catch {} // no origin: a fresh or throwaway repo
     return {
       repo: { owner: "", name: "", url: remote, defaultBranch: this.baseRef },
       base: { sha: mergeBase, ref: this.baseRef },
