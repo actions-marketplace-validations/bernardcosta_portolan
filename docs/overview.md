@@ -27,6 +27,13 @@ Early development. Spriggs is built first and runs on this repo's own pull reque
 
 In CI: Spriggs is a GitHub Action. Another repository adds a workflow step `uses: bernardcosta/portolan@main` with a provider key. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). Cold start: `bun run spriggs init` (`portolan spriggs init`). See [setup.md](setup.md).
 
+## Read next
+
+- [The docs contract](reference/docs-contract.md): the `docs/` layout, frontmatter, `portolan.yml` and change entries.
+- [A pull request run](spriggs/pull-request-run.md): each step of a run, the gate rules, and the labels and statuses.
+- [The agent harness](spriggs/agent-harness.md): the model loop, tools, budgets and providers.
+- [Forges](spriggs/forges.md): how Spriggs talks to GitHub, or to your working copy in `--local` mode.
+
 ## Owner
 
 bernardcosta.

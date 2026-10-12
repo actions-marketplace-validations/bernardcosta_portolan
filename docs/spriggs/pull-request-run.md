@@ -1,0 +1,97 @@
+---
+summary: What happens, step by step, when Spriggs runs on one pull request, and how each outcome turns into a label, a commit status and a comment.
+covers:
+  - packages/spriggs/src/run.ts
+  - packages/spriggs/src/gate/signals.ts
+  - packages/spriggs/src/gate/decide.ts
+  - packages/spriggs/src/report.ts
+  - packages/spriggs/src/agent/prompt.ts
+---
+
+# A pull request run
+
+`portolan spriggs run` (and the GitHub Action, which calls it) goes through the same steps every time. The code is in `packages/spriggs/src/run.ts`.
+
+1. Read the context
+2. Skip rules
+3. Signals (gate stage one)
+4. Verdict (gate stage two)
+5. Agent run
+6. Post-run check
+7. Change entry
+8. Commit and push
+9. Report
+
+## 1. Read the context
+
+The forge builds the pull request context: title, description, labels, commits oldest first, changed files with line counts, and the diff. See [forges.md](forges.md). Spriggs also loads `docs/portolan.yml`; a broken file only prints a warning.
+
+## 2. Skip rules
+
+A skipped run exits with code 0. It posts nothing, sets no status and leaves the label as it was. Spriggs skips when:
+
+- the pull request comes from a fork or from `dependabot[bot]`;
+- the head branch is the repository's default branch (CI only);
+- no files changed;
+- only files under `docs/` changed;
+- the event is an edit of the description, and either the body did not change or the pull request is not labelled `docs:needs-input` or `docs:partial`;
+- the head commit was made by Spriggs itself (CI only; a description edit is the exception, so a rerun after the author adds a reason still works).
+
+## 3. Signals
+
+Stage one of the gate reads plain facts, with no model:
+
+- whether there is a description, whether it has a **Why** section (the text under a heading named "Why", HTML comments removed), and its word count;
+- the Conventional Commits type, from the title or else the first commit subject that has one, and the kind it maps to;
+- whether the change is breaking;
+- linked issue IDs (`#123` by default, or `issues.pattern` from `portolan.yml`);
+- files and lines changed. Lockfiles and similar generated files (`*.lock`, `package-lock.json`, `pnpm-lock.yaml`, `go.sum`, `Cargo.lock` and others) are not counted and not shown to the model;
+- whether the change touches an API (`api/` folders, `.proto`, `.graphql`, OpenAPI files), a schema or migration, or configuration files (YAML, TOML, JSON, `.env.example` outside `docs/`). These are shown in the comment only; they do not change the verdict.
+
+## 4. Verdict
+
+Stage two is a set of rules (`decide.ts`). A reason counts as stated when there is a Why section or the description has at least 20 words.
+
+| Change size (counted lines) | Reason stated | Verdict |
+| --- | --- | --- |
+| Over the limit (5,000, or `SPRIGGS_MAX_LINES`) | either | abstain: too large |
+| Up to 1,500 | yes | proceed, small tier |
+| Up to 1,500 | no | partial: reason missing, small tier |
+| 1,501 up to the limit | yes | proceed, large tier |
+| 1,501 up to the limit | no | abstain: reason missing |
+
+On abstain, Spriggs writes nothing and sets `docs:needs-input`. The tier picks the agent's budget (see [agent-harness.md](agent-harness.md)).
+
+Spriggs also notes drift. The sticky comment stores a hash of the description and the head commit. If the description is the same as last time but new commits arrived, the comment shows a **Heads up** with the number of new commits, and the model is told to prefer the commit messages for them. This never blocks.
+
+## 5. Agent run
+
+Spriggs picks the model (see the Model section of [setup.md](../setup.md)). A missing model or key fails the run here. The model gets one message with the title, description and commits (marked as untrusted author data), the gate's facts, the changed files, the list of docs with their summaries, the docs whose `covers` match the diff, and as many whole-file diffs as fit in about 320 KB. Files that do not fit are listed as "not shown", and the model must read them before it finishes.
+
+After the run, Spriggs counts which changed files the model saw and logs `coverage: read N/M`.
+
+## 6. Post-run check
+
+`enforce.ts` checks every file the model wrote. In CI it also checks that nothing else in the working tree changed. The rules are in [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). On any failure, every write is undone.
+
+## 7. Change entry
+
+The run is partial when the verdict was partial (`reason-missing`) or when some changed files went unread (`diff-too-large`). The entry is written unless the change is `internal` and not a large refactor. See [the docs contract](../reference/docs-contract.md#change-entries) for the format.
+
+## 8. Commit and push
+
+When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line, at most 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run.
+
+## 9. Report
+
+Each run that is not skipped or superseded posts the sticky comment, sets one label and sets the `spriggs` status:
+
+| Outcome | Label | Status |
+| --- | --- | --- |
+| Docs or entry written, everything read, reason stated | `docs:done` | success |
+| Nothing to write, everything read | `docs:none` | success |
+| Reason missing, or changed files left unread | `docs:partial` | success |
+| Gate abstained | `docs:needs-input` | success, or failure when the change is breaking or `SPRIGGS_BLOCKING=true` |
+| Failed (configuration, agent error, budget, check, entry or push) | `docs:needs-input` | failure |
+
+The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the first 140 characters of the reason instead. The comment's first line is the label in bold and what it means. Then come the files in the `docs:` commit, any note from the model, any unread files, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals.
