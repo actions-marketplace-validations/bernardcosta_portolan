@@ -2,11 +2,14 @@
 summary: Get a working copy running with Bun on the host. No Docker.
 covers:
   - packages/spriggs/src/run.ts
+  - packages/spriggs/src/init.ts
   - packages/spriggs/src/forge/local.ts
   - packages/spriggs/src/forge/github.ts
   - packages/spriggs/src/context.ts
   - packages/spriggs/src/gate/signals.ts
   - packages/spriggs/src/agent/model.ts
+  - packages/spriggs/src/agent/agents.ts
+  - packages/spriggs/src/agent/init-prompt.ts
   - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/agent/tools.ts
   - packages/spriggs/src/agent/prompt.ts
@@ -44,13 +47,36 @@ covers:
 | `bun run typecheck` | Typecheck |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
+| `bun run spriggs init` | Write a first set of docs for the whole repository (see [Cold start](#cold-start-spriggs-init)) |
 
-Full usage: `portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]`.
+Full usage:
+
+```
+portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]
+portolan spriggs init [--model <provider/model>]
+```
 
 - `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
 - `--model <provider/model>` overrides `SPRIGGS_MODEL`.
 
 In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The commit messages between the merge-base and `HEAD` are passed to the model too. The repo does not need an `origin` remote, so a fresh or throwaway repo works. A local run is not skipped when the head commit is Spriggs's own, so you can run right after a Spriggs commit. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+
+## Cold start: spriggs init
+
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` once from the repository root instead. It starts a separate agent that explores the whole repository and writes `docs/` in the working tree. Nothing is committed: review the result, then commit it and open a pull request yourself.
+
+How it works:
+
+1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, and an outline of the tracked files (root files, then folders two levels deep with file counts). It reads manifests, the README, CI files and entry points. Untracked files (not ignored by git) are readable too, so you can run init before the first commit.
+2. **Plan.** Before any page, it writes `docs/todo.md`: one list item per page it means to write, with the path, what it covers and the code it rests on, most important first.
+3. **Write.** It writes `portolan.yml` if missing, `overview.md`, `setup.md`, and one page per big part of the repository (a feature, subsystem, API, data format or workflow), grouped in folders. After each page it rewrites the todo so it lists only what is left. Existing docs are kept; it only changes what the code contradicts.
+4. **Finish.** When the todo is empty, Spriggs deletes `docs/todo.md`. Otherwise the file stays as the list of pages still to write.
+
+The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and `finish`. `search` runs `git grep -E` over tracked files, skips binary and generated files, and returns at most 200 matching lines (each cut at 300 characters).
+
+Budget: 120 turns, 45 minutes, and 2,000,000 tokens (input not served from cache, plus output). Set `SPRIGGS_INIT_TOKENS` to change the token cap. When 80% of any of these is spent, Spriggs tells the model once to stop exploring, make the todo accurate and finish; the console logs `budget: nearly spent; told the model to wrap up`. If the run still stops early (budget, context window or model error), the pages written so far stay, and the console says `stopped early` with the reason and the tokens used.
+
+After the run, Spriggs checks the written files the same way it does after a pull request run, but with no line cap and without the working-tree check. It then prints an `init result` block: the files written (new ones marked "(new page)"), how many pages are left in the todo, and any note from the model. If the check fails, the command exits with code 1 and leaves the files in place for you to review.
 
 ## Model
 
@@ -99,7 +125,7 @@ Any provider from the [Model](#model) section works. The default is a convenienc
         with:
           model: openrouter/google/gemini-2.5-pro
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
-``` No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them.
+``` No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) locally first.
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
 
@@ -136,6 +162,8 @@ When `app-id` is set, the action mints a one-hour token from the key before each
 
 The model gets the whole diff of each changed file inline, up to about 320 KB in total (about 5,000 changed lines). Files that do not fit are listed as "not shown". If the model tries to finish before reading them, Spriggs reminds it once; a second finish is accepted. The model's `read_file` tool returns up to 64 KB per call and takes a start line and a line count, so it can read a large file in parts. A single line longer than 64 KB is cut at that size and marked as cut. `read_file` only reads regular files inside the repo, not symlinks.
 
+The pull request agent's tools are `list_files`, `read_file`, `read_diff`, `write_doc` and `finish`. A call to any other tool is refused.
+
 The budget depends on the size of the change, counted in changed lines with generated files left out:
 
 | Size | Turns | Tokens | Time |
@@ -153,7 +181,7 @@ The model gets a list of every tracked file under `docs/` except change entries.
 
 The model edits existing pages in place. It creates a new page only when the change adds a new area with its own behaviour (a service, an API, a command group, a data format), no page's `covers` touches it, and the facts do not fit in one section of an existing page. A new page always gets a `summary` and `covers`. The model does not split, move or delete pages. When it edits a page that has no `covers`, it adds them.
 
-A doc written back with its original content does not count as a write. In a repo with no `docs/` folder yet, `write_doc` creates it.
+A doc written back with its original content does not count as a write. In a repo with no `docs/` folder yet, `write_doc` creates it. `write_doc` refuses a path more than two folders deep under `docs/` (for example `docs/a/b/c/page.md`).
 
 ### Output limit
 
