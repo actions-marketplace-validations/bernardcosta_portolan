@@ -21,8 +21,10 @@ covers:
   - packages/spriggs/src/enforce.ts
   - packages/spriggs/src/report.ts
   - .github/workflows/spriggs.yml
+  - .github/workflows/spriggs-init.yml
   - .env.example
   - action.yml
+  - scripts/open-init-pr.sh
 ---
 
 # Setup
@@ -63,7 +65,7 @@ In `--local` mode the diff is the working copy (uncommitted and untracked files 
 
 ## Cold start: spriggs init
 
-A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` once from the repository root instead. It starts a separate agent that explores the whole repository and writes `docs/` in the working tree. Nothing is committed: review the result, then commit it and open a pull request yourself.
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` once from the repository root instead. It starts a separate agent that explores the whole repository and writes `docs/` in the working tree. Run locally, nothing is committed: review the result, then commit it and open a pull request yourself. You can also run it from the GitHub Action, which opens the pull request for you (see [Run init from the action](#run-init-from-the-action)).
 
 How it works:
 
@@ -77,6 +79,33 @@ The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and 
 Budget: 120 turns, 45 minutes, and 2,000,000 tokens (input not served from cache, plus output). Set `SPRIGGS_INIT_TOKENS` to change the token cap. When 80% of any of these is spent, Spriggs tells the model once to stop exploring, make the todo accurate and finish; the console logs `budget: nearly spent; told the model to wrap up`. If the run still stops early (budget, context window or model error), the pages written so far stay, and the console says `stopped early` with the reason and the tokens used.
 
 After the run, Spriggs checks the written files the same way it does after a pull request run, but with no line cap and without the working-tree check. It then prints an `init result` block: the files written (new ones marked "(new page)"), how many pages are left in the todo, and any note from the model. If the check fails, the command exits with code 1 and leaves the files in place for you to review.
+
+### Run init from the action
+
+Set the action input `command: init` to run the cold start in CI. Start it by hand from a `workflow_dispatch` workflow. Add this as, for example, `.github/workflows/spriggs-init.yml`, with the same provider secret as the pull request workflow:
+
+```yaml
+name: spriggs init
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: bernardcosta/portolan@main
+        with:
+          command: init
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Then open **Actions → spriggs init → Run workflow**. GitHub shows the button only once the workflow file is on the default branch.
+
+After init, the action commits `docs/` to a new branch `spriggs/init-<run id>` and opens a pull request titled `docs: first set of docs from spriggs init` against the branch the workflow ran on. It never pushes to that branch. Only files under `docs/` are committed. If init changed nothing under `docs/`, no pull request is opened. The pull request body carries the `init result` block of the run: the pages written, the pages left in `docs/todo.md` and the model's note. Review the pages like any other change; they are a first draft from the code.
+
+The commit author is `github-actions[bot]`, or `<slug>[bot]` when `app-id` is set (see [Run as a GitHub App](#run-as-a-github-app-optional)). With the workflow's own token, the repository setting **Actions → General → Allow GitHub Actions to create and approve pull requests** must be on, or GitHub refuses to open the pull request. With a GitHub App it is not needed.
 
 ## Model
 
@@ -116,7 +145,7 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Inputs, all optional: `model` (`provider/model`, default `anthropic/claude-opus-5-5` when the Anthropic key is set), `anthropic-api-key`, `openai-api-key`, `openrouter-api-key`, `github-token` (default: the workflow's own token), `app-id` and `app-private-key` (see [Run as a GitHub App](#run-as-a-github-app-optional)), and `max-lines` (default 5000). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`.
+Inputs, all optional: `command` (`run`, the default, checks a pull request; `init` runs the [cold start](#run-init-from-the-action); any other value stops the step with exit code 2), `model` (`provider/model`, default `anthropic/claude-opus-5-5` when the Anthropic key is set), `anthropic-api-key`, `openai-api-key`, `openrouter-api-key`, `github-token` (default: the workflow's own token), `app-id` and `app-private-key` (see [Run as a GitHub App](#run-as-a-github-app-optional)), and `max-lines` (default 5000). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`.
 
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 
@@ -125,7 +154,9 @@ Any provider from the [Model](#model) section works. The default is a convenienc
         with:
           model: openrouter/google/gemini-2.5-pro
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
-``` No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) locally first.
+```
+
+No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) first, locally or [from the action](#run-init-from-the-action).
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
 
@@ -134,6 +165,8 @@ While this repository is private, other repositories can use the action only whe
 ## CI
 
 `.github/workflows/spriggs.yml` in this repository uses the action itself (`uses: ./`) on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless you set up a GitHub App (see [Run as a GitHub App](#run-as-a-github-app-optional)).
+
+`.github/workflows/spriggs-init.yml` runs `command: init` through the action from its own checkout, started by hand (`workflow_dispatch`), with a 60-minute job timeout. It uses the same secret, variables and App settings as `spriggs.yml`.
 
 Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. Spriggs reads the current labels from GitHub before it sets its own, so a run that waited in the queue still leaves one label. Only a comment posted by Spriggs itself counts as the sticky comment. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). Then comes what the run did, including the list of files in the `docs:` commit; files the run created are marked "(new page)". Then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests opened from the default branch, pull requests that change only `docs/`, and Spriggs's own commits. For Spriggs's own pushes the job does not start at all: the workflow skips it when the actor is `github-actions[bot]` or the App's bot, and the harness checks again. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
 
@@ -154,9 +187,9 @@ With the workflow's own token, comments and commits appear as `github-actions[bo
    gh variable set SPRIGGS_APP_SLUG --body "<slug>"
    gh secret set SPRIGGS_APP_PRIVATE_KEY < spriggs.private-key.pem
    ```
-5. Pass them to the action: `app-id: ${{ vars.SPRIGGS_APP_ID }}` and `app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}` under `with:`. This repository's own workflow already does.
+5. Pass them to the action: `app-id: ${{ vars.SPRIGGS_APP_ID }}` and `app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}` under `with:`. This repository's own workflows already do.
 
-When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
+When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. This also works on events that are not pull requests, such as a `workflow_dispatch` init run. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
 
 ### Size and coverage
 
@@ -197,9 +230,11 @@ If a request is still larger than the model's context window, the provider rejec
 
 ```
 action.yml          the GitHub Action other repositories use
+scripts/            open-init-pr.sh (commits docs/ and opens the pull request after an init run in CI)
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
-.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests, through action.yml)
+.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests, through action.yml),
+                    spriggs-init.yml (init by hand, through action.yml)
 ```
 
 ## Pull requests
