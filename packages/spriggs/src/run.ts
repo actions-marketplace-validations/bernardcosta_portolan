@@ -1,4 +1,5 @@
-import { type AgentResult, LARGE_BUDGET, runAgent, SMALL_BUDGET } from "./agent/loop";
+import { docsAgent } from "./agent/agents";
+import { type AgentResult, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import { buildUserMessage } from "./agent/prompt";
 import { ContextWindowError, type Provider, type Usage } from "./agent/providers/types";
@@ -103,7 +104,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       userMessage: message.text,
       inlineShown: message.inlineShown,
       mustRead: message.notShown,
-      budget: verdict.tier === "large" ? LARGE_BUDGET : SMALL_BUDGET,
+      agent: docsAgent(verdict.tier),
     });
   } catch (e) {
     if (e instanceof ContextWindowError) {

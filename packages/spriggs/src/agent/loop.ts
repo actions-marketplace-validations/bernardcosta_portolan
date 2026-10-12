@@ -1,15 +1,6 @@
-import { SYSTEM_PROMPT } from "./prompt";
+import type { Agent } from "./agents";
 import type { Provider, Turn, Usage } from "./providers/types";
-import { type FinishResult, runTool, safeRel, TOOL_DEFS, type ToolRuntime } from "./tools";
-
-export type Budget = { maxTurns: number; maxTokens: number; timeoutMs: number };
-export const SMALL_BUDGET: Budget = { maxTurns: 30, maxTokens: 600_000, timeoutMs: 10 * 60 * 1000 };
-/** Large changes read more files over more turns; most input is cached. */
-export const LARGE_BUDGET: Budget = {
-  maxTurns: 40,
-  maxTokens: 1_500_000,
-  timeoutMs: 15 * 60 * 1000,
-};
+import { type FinishResult, runTool, safeRel, type ToolRuntime, toolDefs } from "./tools";
 
 /** The most the model may write in one reply: about 90 KB of text, enough for several whole pages. */
 const MAX_OUTPUT_TOKENS = 32_000;
@@ -22,6 +13,8 @@ const MAX_OUTPUT_TOKENS = 32_000;
 const CONTEXT_SOFT_LIMIT = Number(process.env.SPRIGGS_CONTEXT_TOKENS) || 600_000;
 const KEEP_RECENT_TOOL_TURNS = 3;
 const CLEARED = "[cleared to save context; call the tool again if you need this content]";
+/** The share of any budget line after which an agent with a `nearBudget` message gets it, once. */
+const NEAR_BUDGET = 0.8;
 
 export type AgentResult = {
   result: FinishResult;
@@ -31,8 +24,20 @@ export type AgentResult = {
   seen: Set<string>;
 };
 
+/** A budget or model error from the loop. Carries the usage so far, so a caller can still report cost. */
+export class AgentError extends Error {
+  constructor(
+    message: string,
+    readonly usage: Usage,
+  ) {
+    super(message);
+    this.name = "AgentError";
+  }
+}
+
 /** The agent loop: complete -> run tool calls -> append results, until `finish` or a budget runs out. */
 export async function runAgent(opts: {
+  agent: Agent;
   provider: Provider;
   rt: ToolRuntime;
   userMessage: string;
@@ -40,9 +45,11 @@ export async function runAgent(opts: {
   inlineShown?: string[];
   /** Changed files the model must read before `finish` (not inline). The loop reminds it once. */
   mustRead?: string[];
-  budget?: Budget;
 }): Promise<AgentResult> {
-  const budget = opts.budget ?? SMALL_BUDGET;
+  const { agent, rt } = opts;
+  const { budget } = agent;
+  const tools = toolDefs(agent.tools);
+  const allowed = new Set<string>(agent.tools);
   const started = Date.now();
   const usage: Usage = { input: 0, output: 0, cached: 0 };
   const turns: Turn[] = [{ role: "user", text: opts.userMessage }];
@@ -50,18 +57,32 @@ export async function runAgent(opts: {
   let nudged = false;
   let reminded = false;
   let cutOnce = false;
+  let warned = false;
 
   for (let turn = 1; turn <= budget.maxTurns; turn++) {
-    if (Date.now() - started > budget.timeoutMs)
-      throw new Error(`agent loop timed out after ${budget.timeoutMs} ms`);
+    const elapsed = Date.now() - started;
     // Cached input is nearly free and counts once; every turn re-sends the whole history.
-    if (usage.input - usage.cached + usage.output > budget.maxTokens)
-      throw new Error(`agent loop exceeded ${budget.maxTokens} uncached tokens`);
+    const spent = usage.input - usage.cached + usage.output;
+    if (elapsed > budget.timeoutMs)
+      throw new AgentError(`agent loop timed out after ${budget.timeoutMs} ms`, usage);
+    if (spent > budget.maxTokens)
+      throw new AgentError(`agent loop exceeded ${budget.maxTokens} uncached tokens`, usage);
+    if (
+      agent.nearBudget &&
+      !warned &&
+      (turn > NEAR_BUDGET * budget.maxTurns ||
+        spent > NEAR_BUDGET * budget.maxTokens ||
+        elapsed > NEAR_BUDGET * budget.timeoutMs)
+    ) {
+      warned = true;
+      turns.push({ role: "user", text: agent.nearBudget });
+      console.log("  budget: nearly spent; told the model to wrap up");
+    }
 
     const c = await opts.provider.complete({
-      system: SYSTEM_PROMPT,
+      system: agent.system,
       turns,
-      tools: TOOL_DEFS,
+      tools,
       maxTokens: MAX_OUTPUT_TOKENS,
     });
     usage.input += c.usage.input;
@@ -75,7 +96,8 @@ export async function runAgent(opts: {
 
     // A reply cut at the output limit: its tool calls, if any, are incomplete. One retry with clear advice.
     if (c.stop === "max_tokens" || c.stop === "length") {
-      if (cutOnce) throw new Error("the model's reply was cut at the output limit twice");
+      if (cutOnce)
+        throw new AgentError("the model's reply was cut at the output limit twice", usage);
       cutOnce = true;
       const advice = `Your reply was cut at the output limit of ${MAX_OUTPUT_TOKENS} tokens. Write the file in a shorter form, or split the page into two files, and try again.`;
       turns.push(
@@ -91,8 +113,8 @@ export async function runAgent(opts: {
     }
 
     if (c.calls.length === 0) {
-      if (opts.rt.finished) break;
-      if (nudged) throw new Error("the model stopped without calling finish");
+      if (rt.finished) break;
+      if (nudged) throw new AgentError("the model stopped without calling finish", usage);
       nudged = true;
       turns.push({ role: "user", text: "Call the finish tool now with the result of this run." });
       continue;
@@ -100,7 +122,9 @@ export async function runAgent(opts: {
 
     const results = [];
     for (const call of c.calls) {
-      let r = await runTool(opts.rt, call.name, call.input);
+      let r = allowed.has(call.name)
+        ? await runTool(rt, call.name, call.input)
+        : { content: `tool ${call.name} is not available to this agent`, isError: true };
       const path = safeRel(pathOf(call.input));
       if (
         !r.isError &&
@@ -114,7 +138,7 @@ export async function runAgent(opts: {
         const missed = (opts.mustRead ?? []).filter((p) => !seen.has(p));
         if (missed.length) {
           reminded = true;
-          opts.rt.finished = undefined;
+          rt.finished = undefined;
           r = {
             isError: true,
             content: `Not yet. These changed files were not shown and you have not read them; read them (read_diff or read_file), then call finish again:\n${missed.map((p) => `- ${p}`).join("\n")}`,
@@ -123,13 +147,13 @@ export async function runAgent(opts: {
         }
       }
       if (r.isError) console.log(`  ${call.name}: ${r.content.split("\n")[0]}`);
-      results.push({ id: call.id, ...r });
+      results.push({ id: call.id, content: r.content, isError: r.isError });
     }
     turns.push({ role: "tool", results });
-    if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turn, seen };
+    if (rt.finished) return { result: rt.finished, usage, turns: turn, seen };
   }
-  if (opts.rt.finished) return { result: opts.rt.finished, usage, turns: turns.length, seen };
-  throw new Error(`agent loop hit the ${budget.maxTurns} turn limit without finishing`);
+  if (rt.finished) return { result: rt.finished, usage, turns: turns.length, seen };
+  throw new AgentError(`agent loop hit the ${budget.maxTurns} turn limit without finishing`, usage);
 }
 
 /** Replaces the content of tool results older than the last few tool turns. Ids and order stay. */

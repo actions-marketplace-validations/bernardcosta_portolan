@@ -12,7 +12,7 @@ export const MAX_DOC_LINES = 1500;
  */
 export async function enforce(
   rt: ToolRuntime,
-  opts: { strictTree: boolean },
+  opts: { strictTree: boolean; maxLines?: number },
 ): Promise<{ ok: true; written: string[]; created: string[] } | { ok: false; reason: string }> {
   // A file written back with its original content is not a change.
   const written: string[] = [];
@@ -51,8 +51,9 @@ export async function enforce(
         ? text.split("\n").length
         : diffLines(original, text);
   }
-  if (lines > MAX_DOC_LINES)
-    return { ok: false, reason: `docs edits are too large: ${lines} lines (cap ${MAX_DOC_LINES})` };
+  const cap = opts.maxLines ?? MAX_DOC_LINES;
+  if (lines > cap)
+    return { ok: false, reason: `docs edits are too large: ${lines} lines (cap ${cap})` };
 
   if (opts.strictTree) {
     // Lines are "XY path"; a leading space is part of XY, so no trim before the split.
