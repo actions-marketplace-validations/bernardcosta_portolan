@@ -7,9 +7,9 @@ branding:
 
 inputs:
   command:
-    description: run (the default) checks a pull request. init explores the whole repository, writes a first set of docs and opens a pull request with them; start it from a workflow_dispatch workflow.
+    description: Leave empty and the event decides. A pull request gives run, which checks the pull request. A start by hand (workflow_dispatch) gives init, which explores the whole repository, writes a first set of docs and opens a pull request with them. Set run or init to force one.
     required: false
-    default: run
+    default: ""
   model:
     description: provider/model, for example anthropic/claude-opus-5-5. Default picks Anthropic when its key is set.
     required: false
@@ -71,7 +71,12 @@ runs:
       run: |
         set -euo pipefail
         cli="$GITHUB_ACTION_PATH/packages/spriggs/src/cli.ts"
-        case "$SPRIGGS_COMMAND" in
+        command="$SPRIGGS_COMMAND"
+        if [ -z "$command" ]; then
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then command=init; else command=run; fi
+        fi
+        echo "command=$command" >> "$GITHUB_OUTPUT"
+        case "$command" in
           run) bun "$cli" run ;;
           init)
             # 3 = stopped early: the pages written so far still go into the pull request, then the job fails.
@@ -80,7 +85,7 @@ runs:
             echo "code=$code" >> "$GITHUB_OUTPUT"
             if [ "$code" != 0 ] && [ "$code" != 3 ]; then exit "$code"; fi
             ;;
-          *) echo "unknown command \"$SPRIGGS_COMMAND\": use run or init" >&2; exit 2 ;;
+          *) echo "unknown command \"$command\": use run or init" >&2; exit 2 ;;
         esac
       env:
         SPRIGGS_COMMAND: ${{ inputs.command }}
@@ -92,7 +97,7 @@ runs:
         SPRIGGS_MODEL: ${{ inputs.model }}
         SPRIGGS_MAX_LINES: ${{ inputs.max-lines }}
     - name: Open the docs pull request
-      if: inputs.command == 'init'
+      if: steps.spriggs.outputs.command == 'init'
       shell: bash
       run: bash "$GITHUB_ACTION_PATH/scripts/open-init-pr.sh"
       env:
@@ -101,7 +106,7 @@ runs:
         SPRIGGS_APP_SLUG: ${{ steps.app.outputs.app-slug }}
         SPRIGGS_INIT_LOG: ${{ runner.temp }}/spriggs-init.log
     - name: Report an early stop
-      if: inputs.command == 'init' && steps.spriggs.outputs.code == '3'
+      if: steps.spriggs.outputs.code == '3'
       shell: bash
       run: |
         echo "::error::spriggs init stopped before it finished. The pages it wrote are in the pull request; docs/todo.md lists what is left."
