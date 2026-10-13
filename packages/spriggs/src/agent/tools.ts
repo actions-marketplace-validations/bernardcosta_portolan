@@ -72,7 +72,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "search",
     description:
-      "Search the tracked files for a regular expression (git grep -E). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
+      "Search the repository's files for a regular expression (git grep -E). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
     schema: {
       type: "object",
       properties: {
@@ -230,8 +230,10 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       if (typeof pattern !== "string" || !pattern.trim() || pattern.length > 200)
         return err("pattern must be 1 to 200 characters");
       if (dir === undefined) return err("invalid path");
-      // -e keeps a pattern that starts with "-" a pattern; -I skips binary files.
-      const p = Bun.spawnSync(["git", "grep", "-n", "-I", "-E", "-e", pattern, "--", dir || "."], {
+      // -e keeps a pattern that starts with "-" a pattern; -I skips binary files. --untracked adds
+      // new files that git does not ignore, so the search sees what list_files and read_file see.
+      const args = ["-c", "core.quotePath=false", "grep", "-n", "-I", "-E", "--untracked"];
+      const p = Bun.spawnSync(["git", ...args, "-e", pattern, "--", dir || "."], {
         cwd: rt.cwd,
         stdout: "pipe",
         stderr: "pipe",
