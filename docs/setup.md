@@ -24,6 +24,7 @@ covers:
   - .env.example
   - action.yml
   - scripts/open-init-pr.sh
+  - scripts/bunfig.toml
 ---
 
 # Setup
@@ -151,6 +152,8 @@ The `workflow_dispatch:` line lets you start the [cold start](#run-init-from-the
 
 Inputs, all optional: `command` (empty by default, so the event decides: `run` on a pull request, `init` on `workflow_dispatch`; set `run` or `init` to force one; any other value stops the step with exit code 2), `model` (`provider/model`, default `anthropic/claude-opus-5-5` when the Anthropic key is set), `anthropic-api-key`, `openai-api-key`, `openrouter-api-key`, `github-token` (default: the workflow's own token), `app-id` and `app-private-key` (see [Run as a GitHub App](#run-as-a-github-app-optional)), and `max-lines` (default 5000). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`.
 
+The action does not read settings from files in your repository. It starts Bun with `--no-env-file` and with an empty `bunfig.toml` that ships with the action (`scripts/bunfig.toml`), so Bun ignores any `.env*` file and any `bunfig.toml` in the repository under review. A setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step. Local runs are not affected: `bun run spriggs` still loads your own `.env`. This protection does not apply with `uses: ./`, where the action's own files come from the pull request.
+
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 
 ```yaml
@@ -232,7 +235,8 @@ If a request is still larger than the model's context window, the provider rejec
 
 ```
 action.yml          the GitHub Action other repositories use
-scripts/            open-init-pr.sh (commits docs/ and opens the pull request after an init run in CI)
+scripts/            open-init-pr.sh (commits docs/ and opens the pull request after an init run in CI),
+                    bunfig.toml (empty on purpose; the action points Bun at it)
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
 .github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests and the cold start
