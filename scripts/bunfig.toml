@@ -1,0 +1,2 @@
+# Empty on purpose. The action starts Bun with `--config` set to this file, so Bun does not read a
+# bunfig.toml from the repository under review. Such a file can preload code into the Spriggs process.
