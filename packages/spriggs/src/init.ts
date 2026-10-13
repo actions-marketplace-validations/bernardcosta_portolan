@@ -13,9 +13,13 @@ import { git } from "./git";
 
 const n = (x: number) => x.toLocaleString("en-US");
 
+/** Exit code when the run stopped before `finish`: the pages written stay, but the set is not complete. */
+export const STOPPED_EARLY = 3;
+
 /**
  * Cold start: the init agent explores the repository and writes docs/ in the working tree.
  * Nothing is committed; the author reviews the result and opens the pull request.
+ * Returns 0, 1 when the post-run check failed, or `STOPPED_EARLY`.
  */
 export async function init(opts: { cwd?: string; model?: string } = {}): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
@@ -32,18 +36,20 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   console.log(`init: ${provider.model}, ${index.length} existing docs`);
 
   let notes = "";
+  let stopped = false;
   try {
     const agent = await runAgent({
       agent: INIT_AGENT,
       provider,
       rt,
-      userMessage: buildInitMessage({ name: config?.name, index, tree: fileTree(cwd) }),
+      userMessage: buildInitMessage({ name: config?.name, index, tree: fileTree(rt.readable) }),
     });
     notes = agent.result.notes;
     console.log(`done in ${agent.turns} turns: ${usageLine(agent.usage)}`);
   } catch (e) {
     // The budget, the context window or the model gave out. The pages written so far stay;
     // the todo page is the honest list of what is left.
+    stopped = true;
     const usage = e instanceof AgentError ? `; ${usageLine(e.usage)}` : "";
     console.warn(
       `stopped early: ${(e as Error).message}${usage}. Keeping the pages written so far.`,
@@ -67,12 +73,11 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
       notes ? `\nNote from the run: ${notes}` : ""
     }\nReview the changes in docs/, then commit them and open a pull request.\n--- end ---`,
   );
-  return 0;
+  return stopped ? STOPPED_EARLY : 0;
 }
 
 /** Root files one per line, then each folder (two levels) with its file count. Capped. */
-function fileTree(cwd: string): string {
-  const paths = git(["ls-files"], cwd).trim().split("\n").filter(Boolean);
+function fileTree(paths: Iterable<string>): string {
   const roots: string[] = [];
   const folders = new Map<string, number>();
   for (const p of paths) {
@@ -87,7 +92,7 @@ function fileTree(cwd: string): string {
     ...roots.sort().slice(0, 40),
     ...[...folders.entries()].sort().map(([dir, count]) => `${dir}/ (${count} files)`),
   ];
-  return lines.length ? lines.slice(0, 300).join("\n") : "(no tracked files)";
+  return lines.length ? lines.slice(0, 300).join("\n") : "(no files)";
 }
 
 /** Items left in the todo page; removes the page when it lists nothing. */
@@ -95,7 +100,8 @@ async function todoLeft(cwd: string): Promise<number> {
   const abs = join(cwd, TODO_PATH);
   if (!existsSync(abs)) return 0;
   const body = splitFrontmatter(await Bun.file(abs).text())?.body ?? "";
-  const items = body.split("\n").filter((l) => /^\s*[-*]\s+\S/.test(l)).length;
+  // Bullets or a numbered list: the model may write either.
+  const items = body.split("\n").filter((l) => /^\s*([-*+]|\d+[.)])\s+\S/.test(l)).length;
   if (items === 0) rmSync(abs);
   return items;
 }

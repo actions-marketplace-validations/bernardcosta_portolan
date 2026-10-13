@@ -66,13 +66,20 @@ runs:
         app-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
     - name: Run Spriggs
+      id: spriggs
       shell: bash
       run: |
         set -euo pipefail
         cli="$GITHUB_ACTION_PATH/packages/spriggs/src/cli.ts"
         case "$SPRIGGS_COMMAND" in
           run) bun "$cli" run ;;
-          init) bun "$cli" init | tee "$RUNNER_TEMP/spriggs-init.log" ;;
+          init)
+            # 3 = stopped early: the pages written so far still go into the pull request, then the job fails.
+            code=0
+            bun "$cli" init 2>&1 | tee "$RUNNER_TEMP/spriggs-init.log" || code=$?
+            echo "code=$code" >> "$GITHUB_OUTPUT"
+            if [ "$code" != 0 ] && [ "$code" != 3 ]; then exit "$code"; fi
+            ;;
           *) echo "unknown command \"$SPRIGGS_COMMAND\": use run or init" >&2; exit 2 ;;
         esac
       env:
@@ -93,3 +100,9 @@ runs:
         GH_REPO: ${{ github.repository }}
         SPRIGGS_APP_SLUG: ${{ steps.app.outputs.app-slug }}
         SPRIGGS_INIT_LOG: ${{ runner.temp }}/spriggs-init.log
+    - name: Report an early stop
+      if: inputs.command == 'init' && steps.spriggs.outputs.code == '3'
+      shell: bash
+      run: |
+        echo "::error::spriggs init stopped before it finished. The pages it wrote are in the pull request; docs/todo.md lists what is left."
+        exit 1

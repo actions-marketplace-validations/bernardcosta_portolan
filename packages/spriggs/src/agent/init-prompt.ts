@@ -43,7 +43,7 @@ export function buildInitMessage(input: {
   return [
     `# Repository${input.name ? `: ${input.name}` : ""}`,
     `## Existing docs\n${docList}`,
-    `## Tracked files: root files, then folders with file counts (top two levels)\n${input.tree}`,
+    `## Files: root files, then folders with file counts (top two levels)\n${input.tree}`,
     "Begin with the survey.",
   ].join("\n\n");
 }

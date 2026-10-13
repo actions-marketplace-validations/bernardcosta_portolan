@@ -33,6 +33,8 @@ body="$(mktemp)"
 {
   echo "Spriggs explored the repository and wrote these pages. Review them like any other change: the pages are a first draft from the code, not a record of intent."
   echo
+  # A run that stopped early says why.
+  grep '^stopped early: ' "${SPRIGGS_INIT_LOG:-/dev/null}" || true
   # The result block of the run, without its two marker lines and the hint meant for a local run.
   sed -n '/^--- init result ---$/,/^--- end ---$/p' "${SPRIGGS_INIT_LOG:-/dev/null}" |
     grep -v -e '^--- ' -e '^Review the changes in docs/' || true
