@@ -1,12 +1,15 @@
 name: spriggs
 
+# A pull request starts the normal run. A start by hand (Actions tab -> spriggs -> Run workflow) is the
+# cold start: Spriggs explores the repository and opens a pull request with a first set of docs.
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
 
 # One run at a time per pull request. A cancelled run could leave a PR without its label.
 concurrency:
-  group: spriggs-${{ github.event.pull_request.number }}
+  group: spriggs-${{ github.event.pull_request.number || 'init' }}
   cancel-in-progress: false
 
 permissions:

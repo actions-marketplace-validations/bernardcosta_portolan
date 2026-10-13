@@ -49,8 +49,14 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   );
 
   const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
+  const index = await docsIndex(cwd);
+  // No pages at all: the comment points to the cold start.
+  const noDocs = !index.some((d) => d.path.endsWith(".md"));
   const report = async (label: Label, status: [StatusState, string], runReport?: RunReport) => {
-    await forge.upsertComment(renderComment(s, verdict, label, runReport, staleCommits), marker);
+    await forge.upsertComment(
+      renderComment(s, verdict, label, runReport, staleCommits, noDocs),
+      marker,
+    );
     await forge.setLabel(label);
     await forge.setStatus(...status);
     return 0;
@@ -83,7 +89,6 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     });
   };
 
-  const index = await docsIndex(cwd);
   let agent: AgentResult;
   try {
     const message = buildUserMessage({

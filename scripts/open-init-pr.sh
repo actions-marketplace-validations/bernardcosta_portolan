@@ -30,14 +30,8 @@ git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
   push --quiet origin "HEAD:refs/heads/$branch"
 
 body="$(mktemp)"
-{
-  echo "Spriggs explored the repository and wrote these pages. Review them like any other change: the pages are a first draft from the code, not a record of intent."
-  echo
-  # A run that stopped early says why.
-  grep '^stopped early: ' "${SPRIGGS_INIT_LOG:-/dev/null}" || true
-  # The result block of the run, without its two marker lines and the hint meant for a local run.
-  sed -n '/^--- init result ---$/,/^--- end ---$/p' "${SPRIGGS_INIT_LOG:-/dev/null}" |
-    grep -v -e '^--- ' -e '^Review the changes in docs/' || true
-} > "$body"
+# The body is the report that init printed, without its two marker lines.
+sed -n '/^--- init result ---$/,/^--- end ---$/p' "${SPRIGGS_INIT_LOG:-/dev/null}" | sed '1d;$d' > "$body"
+[ -s "$body" ] || echo "Spriggs wrote a first set of docs for this repository." > "$body"
 
 gh pr create --base "$base" --head "$branch" --title "$title" --body-file "$body"

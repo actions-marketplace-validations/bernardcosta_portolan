@@ -4,12 +4,14 @@ import { INIT_AGENT } from "./agent/agents";
 import { buildInitMessage, TODO_PATH } from "./agent/init-prompt";
 import { AgentError, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
+import type { Usage } from "./agent/providers/types";
 import { createRuntime } from "./agent/tools";
 import { splitFrontmatter } from "./docs/frontmatter";
 import { loadPortolanConfig } from "./docs/portolan";
 import { docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
 import { git } from "./git";
+import { renderInitReport } from "./report";
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -36,7 +38,9 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   console.log(`init: ${provider.model}, ${index.length} existing docs`);
 
   let notes = "";
-  let stopped = false;
+  let stopped: string | undefined;
+  let usage: Usage | undefined;
+  let turns: number | undefined;
   try {
     const agent = await runAgent({
       agent: INIT_AGENT,
@@ -45,14 +49,16 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
       userMessage: buildInitMessage({ name: config?.name, index, tree: fileTree(rt.readable) }),
     });
     notes = agent.result.notes;
+    usage = agent.usage;
+    turns = agent.turns;
     console.log(`done in ${agent.turns} turns: ${usageLine(agent.usage)}`);
   } catch (e) {
     // The budget, the context window or the model gave out. The pages written so far stay;
     // the todo page is the honest list of what is left.
-    stopped = true;
-    const usage = e instanceof AgentError ? `; ${usageLine(e.usage)}` : "";
+    stopped = (e as Error).message;
+    if (e instanceof AgentError) usage = e.usage;
     console.warn(
-      `stopped early: ${(e as Error).message}${usage}. Keeping the pages written so far.`,
+      `stopped early: ${stopped}${usage ? `; ${usageLine(usage)}` : ""}. Keeping the pages written so far.`,
     );
   }
 
@@ -64,16 +70,20 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
 
   const left = await todoLeft(cwd);
   const written = check.written.filter((p) => p !== TODO_PATH || left > 0);
-  console.log(
-    `\n--- init result ---\n${
-      written.length
-        ? written.map((p) => `- ${p}${check.created.includes(p) ? " (new page)" : ""}`).join("\n")
-        : "(no pages written)"
-    }\n${left === 0 ? "Nothing left in the todo." : `${n(left)} page(s) left in ${TODO_PATH}.`}${
-      notes ? `\nNote from the run: ${notes}` : ""
-    }\nReview the changes in docs/, then commit them and open a pull request.\n--- end ---`,
-  );
-  return stopped ? STOPPED_EARLY : 0;
+  // The action takes the text between the two marker lines as the body of the pull request.
+  const report = renderInitReport({
+    written,
+    created: check.created,
+    left,
+    notes,
+    ...(stopped === undefined ? {} : { stopped }),
+    ...(usage ? { usage } : {}),
+    model: provider.model,
+    ...(turns ? { turns } : {}),
+  });
+  console.log(`\n--- init result ---\n${report}\n--- end ---`);
+  console.log("Review the changes in docs/, then commit them and open a pull request.");
+  return stopped === undefined ? 0 : STOPPED_EARLY;
 }
 
 /** Root files one per line, then each folder (two levels) with its file count. Capped. */
