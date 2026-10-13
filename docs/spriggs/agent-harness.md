@@ -42,7 +42,7 @@ Each turn: check the budget, send the whole history to the provider, run the too
 The tools are the only way the model touches anything: no shell, no network. Paths are made relative to the repository; a path that escapes it is refused.
 
 - `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files for `init`).
-- `search(pattern, path)`: `git grep -n -I -E` over tracked files. The pattern is 1 to 200 characters. Generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more.
+- `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -E --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in `init`. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more.
 - `read_file(path, start, lines)`: whole lines up to 64 KB per call, with a note naming the next line to ask for. A single line over 64 KB is cut and marked. Only regular files inside the repository; symlinks are refused.
 - `read_diff(path)`: the diff of one changed file, cut at 64 KB. A cut diff does not count as seen. For a new file not in git yet it says to use `read_file`.
 - `write_doc(path, content)`: see the rules in [the docs contract](../reference/docs-contract.md). Also refused: content over 80,000 characters, and a path that resolves outside `docs/` through a symlink. Markdown frontmatter and `portolan.yml` are checked on every write. The first write of a file records its old content, so the run can undo it.
@@ -61,4 +61,8 @@ Both clients use a five-minute request timeout. To add a provider, implement the
 
 ## Prompts
 
-`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. `agent/init-prompt.ts` holds the cold-start prompt and builds its first message from the project name, the existing docs with summaries, and a file outline. `init.ts` builds that outline: up to 40 root files, then folders two levels deep with file counts, capped at 300 lines. The todo page path is `docs/todo.md`; after the run, `init.ts` removes it when it has no list items left.
+`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. `agent/init-prompt.ts` holds the cold-start prompt and builds its first message from the project name, the existing docs with summaries, and a file outline. `init.ts` builds that outline from the runtime's readable set (tracked files plus untracked files git does not ignore): up to 40 root files, then folders two levels deep with file counts, capped at 300 lines, or `(no files)` when there are none. The todo page path is `docs/todo.md`; after the run, `init.ts` counts its list items (lines starting with `-`, `*`, `+`, `1.` or `1)`) and removes it when there are none.
+
+## Init exit codes
+
+`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the `stopped early:` log line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.

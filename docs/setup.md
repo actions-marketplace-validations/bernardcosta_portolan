@@ -69,16 +69,24 @@ A pull request run only sees one diff. On a repository with no docs yet, or with
 
 How it works:
 
-1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, and an outline of the tracked files (root files, then folders two levels deep with file counts). It reads manifests, the README, CI files and entry points. Untracked files (not ignored by git) are readable too, so you can run init before the first commit.
+1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, and an outline of the files (root files, then folders two levels deep with file counts). The outline holds tracked files and untracked files that git does not ignore, so you can run init before the first commit. Ignored files, such as `.env`, stay hidden. The agent reads manifests, the README, CI files and entry points.
 2. **Plan.** Before any page, it writes `docs/todo.md`: one list item per page it means to write, with the path, what it covers and the code it rests on, most important first.
 3. **Write.** It writes `portolan.yml` if missing, `overview.md`, `setup.md`, and one page per big part of the repository (a feature, subsystem, API, data format or workflow), grouped in folders. After each page it rewrites the todo so it lists only what is left. Existing docs are kept; it only changes what the code contradicts.
-4. **Finish.** When the todo is empty, Spriggs deletes `docs/todo.md`. Otherwise the file stays as the list of pages still to write.
+4. **Finish.** When the todo has no list items left, Spriggs deletes `docs/todo.md`. Otherwise the file stays as the list of pages still to write. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) both count as list items.
 
-The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and `finish`. `search` runs `git grep -E` over tracked files, skips binary and generated files, and returns at most 200 matching lines (each cut at 300 characters).
+The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and `finish`. `search` runs `git grep -E` over tracked files and untracked files that git does not ignore, skips binary and generated files, and returns at most 200 matching lines (each cut at 300 characters). Paths with non-ASCII characters come out as they are, not quoted.
 
 Budget: 120 turns, 45 minutes, and 2,000,000 tokens (input not served from cache, plus output). Set `SPRIGGS_INIT_TOKENS` to change the token cap. When 80% of any of these is spent, Spriggs tells the model once to stop exploring, make the todo accurate and finish; the console logs `budget: nearly spent; told the model to wrap up`. If the run still stops early (budget, context window or model error), the pages written so far stay, and the console says `stopped early` with the reason and the tokens used.
 
-After the run, Spriggs checks the written files the same way it does after a pull request run, but with no line cap and without the working-tree check. It then prints an `init result` block: the files written (new ones marked "(new page)"), how many pages are left in the todo, and any note from the model. If the check fails, the command exits with code 1 and leaves the files in place for you to review.
+After the run, Spriggs checks the written files the same way it does after a pull request run, but with no line cap and without the working-tree check. It then prints an `init result` block: the files written (new ones marked "(new page)"), how many pages are left in the todo, and any note from the model. If the check fails, it leaves the files in place for you to review.
+
+Exit codes:
+
+| Code | Means |
+| --- | --- |
+| 0 | The run finished and the check passed |
+| 1 | The post-run check failed (this wins over an early stop) |
+| 3 | The run stopped before `finish`; the pages written so far stay and `docs/todo.md` lists what is left |
 
 ### Run init from the action
 
@@ -104,6 +112,8 @@ jobs:
 Then open **Actions → spriggs init → Run workflow**. GitHub shows the button only once the workflow file is on the default branch.
 
 After init, the action commits `docs/` to a new branch `spriggs/init-<run id>` and opens a pull request titled `docs: first set of docs from spriggs init` against the branch the workflow ran on. It never pushes to that branch. Only files under `docs/` are committed. If init changed nothing under `docs/`, no pull request is opened. The pull request body carries the `init result` block of the run: the pages written, the pages left in `docs/todo.md` and the model's note. Review the pages like any other change; they are a first draft from the code.
+
+If init stopped early (exit code 3), the action still opens the pull request with the pages written so far, and its body includes the `stopped early` line with the reason. Then the job fails with an error that points to `docs/todo.md` for what is left. If the post-run check fails, or init exits with any other code, the step fails and no pull request is opened.
 
 The commit author is `github-actions[bot]`, or `<slug>[bot]` when `app-id` is set (see [Run as a GitHub App](#run-as-a-github-app-optional)). With the workflow's own token, the repository setting **Actions → General → Allow GitHub Actions to create and approve pull requests** must be on, or GitHub refuses to open the pull request. With a GitHub App it is not needed.
 
