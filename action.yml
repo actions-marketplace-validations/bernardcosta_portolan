@@ -70,18 +70,26 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cli="$GITHUB_ACTION_PATH/packages/spriggs/src/cli.ts"
+        # The working directory is the repository under review, and its files are not trusted. Bun must
+        # not load config from it: a bunfig.toml can preload code and a .env can set the provider address,
+        # both inside this step, which holds the keys. Keep the exact form `--config=<absolute path>` to a
+        # file that exists. With `--config <path>`, `-c <path>` or an empty value, Bun reads the
+        # repository's bunfig.toml with no error, and a relative path is looked up in the repository.
+        spriggs() {
+          bun --no-env-file --config="$GITHUB_ACTION_PATH/scripts/bunfig.toml" \
+            "$GITHUB_ACTION_PATH/packages/spriggs/src/cli.ts" "$@"
+        }
         command="$SPRIGGS_COMMAND"
         if [ -z "$command" ]; then
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then command=init; else command=run; fi
         fi
         echo "command=$command" >> "$GITHUB_OUTPUT"
         case "$command" in
-          run) bun "$cli" run ;;
+          run) spriggs run ;;
           init)
             # 3 = stopped early: the pages written so far still go into the pull request, then the job fails.
             code=0
-            bun "$cli" init 2>&1 | tee "$RUNNER_TEMP/spriggs-init.log" || code=$?
+            spriggs init 2>&1 | tee "$RUNNER_TEMP/spriggs-init.log" || code=$?
             echo "code=$code" >> "$GITHUB_OUTPUT"
             if [ "$code" != 0 ] && [ "$code" != 3 ]; then exit "$code"; fi
             ;;
