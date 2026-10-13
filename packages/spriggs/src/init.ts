@@ -11,7 +11,7 @@ import { loadPortolanConfig } from "./docs/portolan";
 import { docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
 import { git } from "./git";
-import { renderInitReport } from "./report";
+import { flat, renderInitReport } from "./report";
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -20,7 +20,8 @@ export const STOPPED_EARLY = 3;
 
 /**
  * Cold start: the init agent explores the repository and writes docs/ in the working tree.
- * Nothing is committed; the author reviews the result and opens the pull request.
+ * Nothing is committed here: locally the author reviews the result and opens the pull request;
+ * in CI the action does (scripts/open-init-pr.sh).
  * Returns 0, 1 when the post-run check failed, or `STOPPED_EARLY`.
  */
 export async function init(opts: { cwd?: string; model?: string } = {}): Promise<number> {
@@ -55,7 +56,8 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   } catch (e) {
     // The budget, the context window or the model gave out. The pages written so far stay;
     // the todo page is the honest list of what is left.
-    stopped = (e as Error).message;
+    // Never empty: this value is also what marks the run as stopped.
+    stopped = flat((e instanceof Error && e.message) || String(e)) || "unknown error";
     if (e instanceof AgentError) usage = e.usage;
     console.warn(
       `stopped early: ${stopped}${usage ? `; ${usageLine(usage)}` : ""}. Keeping the pages written so far.`,
@@ -76,10 +78,10 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
     created: check.created,
     left,
     notes,
-    ...(stopped === undefined ? {} : { stopped }),
-    ...(usage ? { usage } : {}),
+    stopped,
+    usage,
     model: provider.model,
-    ...(turns ? { turns } : {}),
+    turns,
   });
   console.log(`\n--- init result ---\n${report}\n--- end ---`);
   console.log("Review the changes in docs/, then commit them and open a pull request.");

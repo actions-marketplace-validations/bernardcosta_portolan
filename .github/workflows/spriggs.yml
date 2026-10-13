@@ -7,7 +7,7 @@ on:
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
-# One run at a time per pull request. A cancelled run could leave a PR without its label.
+# One run at a time per pull request, and one cold start at a time. A cancelled run could leave a PR without its label.
 concurrency:
   group: spriggs-${{ github.event.pull_request.number || 'init' }}
   cancel-in-progress: false
@@ -22,6 +22,8 @@ jobs:
     # Spriggs's own docs commits never start a run. The harness checks this too; this line saves the runner.
     if: github.actor != 'github-actions[bot]' && github.actor != format('{0}[bot]', vars.SPRIGGS_APP_SLUG)
     runs-on: ubuntu-latest
+    # A backstop: the agent's own time budget is checked only between turns.
+    timeout-minutes: 60
     steps:
       # Dogfood: this repo is the action. Other repos write `uses: bernardcosta/portolan@main` and no checkout.
       - uses: actions/checkout@v4

@@ -4,7 +4,7 @@ import type { Verdict } from "./gate/decide";
 import { maxLines } from "./gate/decide";
 import type { Signals } from "./gate/signals";
 
-// The sticky comment. Written as a colleague would write it: first person, plain words, short sentences.
+// The sticky comment and the cold start report. Written as a colleague would write it: first person, plain words, short sentences.
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -86,6 +86,12 @@ function usageLine(u: Usage, model: string | undefined, turns?: number): string 
   return `_${model ?? "model"} · ${n(u.input)} input tokens (${n(u.cached)} from cache) · ${n(u.output)} output tokens${turns ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}_`;
 }
 
+/**
+ * Model or error text on one line. In the cold start report no such text may start a line: a line of
+ * its own could pass as a marker line of the report or as a workflow command of the CI runner.
+ */
+export const flat = (s: string): string => s.replace(/[\p{Cc}\s]+/gu, " ").trim();
+
 /** The body of the pull request that a cold start opens; locally, the text printed at the end. */
 export function renderInitReport(r: {
   written: string[];
@@ -94,27 +100,32 @@ export function renderInitReport(r: {
   left: number;
   notes: string;
   /** Why the run stopped before `finish`, when it did. */
-  stopped?: string;
-  usage?: Usage;
+  stopped: string | undefined;
+  usage: Usage | undefined;
   model: string;
-  turns?: number;
+  turns: number | undefined;
 }): string {
+  const notes = flat(r.notes);
   return [
     "## Spriggs: cold start report",
     "",
     "I explored this repository and wrote a first set of docs. Review them like any other change: the pages are a first draft from the code, not a record of intent.",
     "",
     ...(r.stopped
-      ? [`> **Stopped early:** ${r.stopped}. I kept the pages I had written before that.`, ""]
+      ? [`> **Stopped early:** ${flat(r.stopped)}. I kept the pages I had written before that.`, ""]
       : []),
     ...(r.written.length
-      ? r.written.map((p) => `- \`${p}\`${r.created.includes(p) ? " (new page)" : ""}`)
+      ? r.written.map((p) => `- \`${flat(p)}\`${r.created.includes(p) ? " (new page)" : ""}`)
       : ["I wrote no pages."]),
-    "",
-    r.left
-      ? `**${n(r.left)} page${r.left === 1 ? "" : "s"} planned but not written.** The list is in \`docs/todo.md\`.`
-      : "I wrote every page I planned.",
-    ...(r.notes ? ["", `A note from the run: ${r.notes}`] : []),
+    ...(r.left
+      ? [
+          "",
+          `**${n(r.left)} page${r.left === 1 ? "" : "s"} planned but not written.** The list is in \`docs/todo.md\`.`,
+        ]
+      : r.stopped
+        ? [] // stopped before the plan was written or finished: no claim that the set is complete
+        : ["", "I wrote every page I planned."]),
+    ...(notes ? ["", `A note from the run: ${notes}`] : []),
     ...(r.usage ? ["", usageLine(r.usage, r.model, r.turns)] : []),
   ].join("\n");
 }
@@ -158,7 +169,7 @@ export function renderComment(
       : []),
     ...(noDocs
       ? [
-          "> **No docs yet:** this repository had no doc pages when I started, and a pull request run only covers one change. For a first set of docs for the whole repository, run the cold start: start the Spriggs workflow by hand from the Actions tab, or run `spriggs init` locally.",
+          "> **No docs yet:** this repository had no doc pages when I started, and a pull request run only covers one change. For a first set of docs for the whole repository, run the cold start: start the Spriggs workflow by hand from the Actions tab. The workflow needs `workflow_dispatch:` under `on:` for that.",
           "",
         ]
       : []),
