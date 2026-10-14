@@ -49,7 +49,7 @@ covers:
 | `bun run typecheck` | Typecheck |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
-| `bun run spriggs init` | Write a first set of docs for the whole repository (see [Cold start](#cold-start-spriggs-init)) |
+| `bun run spriggs init` | Check the docs of the whole repository against the code and fill the gaps (see [Cold start](#cold-start-spriggs-init)) |
 
 Full usage:
 
@@ -65,14 +65,14 @@ In `--local` mode the diff is the working copy (uncommitted and untracked files 
 
 ## Cold start: spriggs init
 
-A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` once from the repository root instead. It starts a separate agent that explores the whole repository and writes `docs/` in the working tree. Run locally, nothing is committed: review the result, then commit it and open a pull request yourself. You can also run it from the GitHub Action, which opens the pull request for you (see [Run init from the action](#run-init-from-the-action)).
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` from the repository root instead. It starts a separate agent that explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. Run it again whenever the docs fall behind; each run starts with what the last one left in `docs/todo.md`. Run locally, nothing is committed: review the result, then commit it and open a pull request yourself. You can also run it from the GitHub Action, which opens the pull request for you (see [Run init from the action](#run-init-from-the-action)).
 
 How it works:
 
-1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, and an outline of the files (root files, then folders two levels deep with file counts). The outline holds tracked files and untracked files that git does not ignore, so you can run init before the first commit. Ignored files, such as `.env`, stay hidden. The agent reads manifests, the README, CI files and entry points.
-2. **Plan.** Before any page, it writes `docs/todo.md`: one list item per page it means to write, with the path, what it covers and the code it rests on, most important first.
-3. **Write.** It writes `portolan.yml` if missing, `overview.md`, `setup.md`, and one page per big part of the repository (a feature, subsystem, API, data format or workflow), grouped in folders. After each page it rewrites the todo so it lists only what is left. Existing docs are kept; it only changes what the code contradicts.
-4. **Finish.** When the todo has no list items left, Spriggs deletes `docs/todo.md`. Otherwise the file stays as the list of pages still to write. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) both count as list items.
+1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, the body of `docs/todo.md` from the last run (if any, first 20,000 characters; a symlink is ignored), and an outline of the files (root files, then folders two levels deep with file counts). The outline holds tracked files and untracked files that git does not ignore, so you can run init before the first commit. Ignored files, such as `.env`, stay hidden. The agent starts with the open items of the last run, then reads manifests, the README, CI files and entry points.
+2. **Plan.** Before any page, it writes `docs/todo.md` with two lists. **To write**: one item per page it means to write, with the path, what it covers and the code it rests on. **To check**: the existing pages it means to check against the code. It keeps the open items of the last run. Most important first.
+3. **Work.** It writes `portolan.yml` if missing, `overview.md`, `setup.md`, and one page per big part of the repository (a feature, subsystem, API, data format or workflow), grouped in folders, and checks the existing pages. After each page it rewrites the todo so it lists only what is left; a page checked only in part stays under **To check**. Existing docs keep every fact the code supports, and the agent changes what the code contradicts. It may also clean up: replace text that repeats another page with a link to that page, and move a section to the page where it belongs. It names every removal and move in its note, so the reviewer can check them.
+4. **Finish.** When the todo has no list items left and the model wrote it in this run, Spriggs deletes `docs/todo.md`, and the report says so if the todo came from an earlier run. It never deletes a todo the model did not write. Otherwise the file stays as the list of pages still to write or check, and the next run starts with it. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) both count as list items.
 
 The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and `finish`. `search` runs `git grep -E` over tracked files and untracked files that git does not ignore, skips binary and generated files, and returns at most 200 matching lines (each cut at 300 characters). Paths with non-ASCII characters come out as they are, not quoted.
 
@@ -82,7 +82,8 @@ After the run, Spriggs checks the written files the same way it does after a pul
 
 - a **Stopped early** line with the reason, when the run stopped before `finish`;
 - the files written, with new ones marked "(new page)", or "I wrote no pages";
-- how many pages are planned but not written (listed in `docs/todo.md`), or "I wrote every page I planned" when the run finished with nothing left;
+- how many items are left to write or check (listed in `docs/todo.md`), or "I wrote and checked every page I planned" when the run finished with nothing left;
+- "I removed `docs/todo.md`: nothing is left." when the run cleared a todo from an earlier run;
 - any note from the model;
 - a small line with the model name, tokens and turns.
 
@@ -102,7 +103,7 @@ The same workflow runs both. The action's `command` input is empty by default, a
 
 If you had a separate init workflow (for example `spriggs-init.yml` with `command: init`), it still works, but you can delete it once `workflow_dispatch:` is in the main workflow.
 
-After init, the action commits `docs/` to a new branch `spriggs/init-<run id>` and opens a pull request titled `docs: first set of docs from spriggs init` against the branch the workflow ran on. It never pushes to that branch. Only files under `docs/` are committed. If init changed nothing under `docs/`, no pull request is opened. The pull request body is the [cold start report](#cold-start-spriggs-init) of the run, without its two marker lines. If the log holds no report, the body is one line saying Spriggs wrote a first set of docs. Review the pages like any other change; they are a first draft from the code.
+After init, the action commits `docs/` to a new branch `spriggs/init-<run id>` and opens a pull request titled `docs: Spriggs catches the docs up with the code` against the branch the workflow ran on. It never pushes to that branch. Only files under `docs/` are committed. If init changed nothing under `docs/`, no pull request is opened. The pull request body is the [cold start report](#cold-start-spriggs-init) of the run, without its two marker lines. If the log holds no report, the body is one line saying Spriggs checked the docs against the code and filled the gaps it found. Review the pages like any other change; they are a draft from the code.
 
 If init stopped early (exit code 3), the action still opens the pull request with the pages written so far, and the report in its body starts with the **Stopped early** reason. Then the job fails with an error that points to `docs/todo.md` for what is left. If the post-run check fails, or init exits with any other code, the step fails and no pull request is opened.
 

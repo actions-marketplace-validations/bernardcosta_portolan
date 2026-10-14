@@ -30,7 +30,7 @@ export function docsAgent(tier: "small" | "large"): Agent {
 
 /**
  * The cold-start agent: explores the repository and writes the docs spine plus a page per big part.
- * The budget is the ceiling on cost for any repository; docs/todo.md carries what was left unwritten.
+ * The budget is the ceiling on cost for any repository; docs/todo.md carries what was left to write or check.
  */
 export const INIT_AGENT: Agent = {
   name: "init",
@@ -42,5 +42,5 @@ export const INIT_AGENT: Agent = {
     timeoutMs: 45 * 60 * 1000,
   },
   nearBudget:
-    "Most of the budget is spent. Stop exploring now. Rewrite docs/todo.md so it lists exactly the pages you planned but did not write, then call finish.",
+    "Most of the budget is spent. Stop exploring now. Rewrite docs/todo.md so it lists exactly the pages you did not write or did not fully check, then call finish.",
 };
