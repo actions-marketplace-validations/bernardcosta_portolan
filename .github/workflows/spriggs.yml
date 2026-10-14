@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 60
     steps:
       # Dogfood: this repo is the action. Other repos write `uses: bernardcosta/portolan@main` and no checkout.
+      # Never add pull_request_target to this workflow: it gives fork pull requests the secrets, and with
+      # `uses: ./` the action's code would come from the fork.
       - uses: actions/checkout@v4
       - uses: ./
         with:

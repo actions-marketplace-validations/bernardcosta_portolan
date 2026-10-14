@@ -74,7 +74,9 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
 
   const check = await enforce(rt, { strictTree: false, maxLines: Number.POSITIVE_INFINITY });
   if (!check.ok) {
-    console.error(`check failed: ${check.reason}. The files are left in place for you to review.`);
+    console.error(
+      `check failed: ${flat(check.reason)}. The files are left in place for you to review.`,
+    );
     return 1;
   }
 

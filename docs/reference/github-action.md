@@ -13,6 +13,8 @@ covers:
 
 It is a composite action. It needs the workflow permissions `contents: write`, `pull-requests: write` and `statuses: write`.
 
+Run it on the `pull_request` event, never on `pull_request_target`. With `pull_request_target`, a pull request from a fork runs with the repository's secrets and a write token. With `uses: ./`, the action's own code would then come from the fork.
+
 ## Inputs
 
 All inputs are optional. Each one is passed to Spriggs as an environment variable.
