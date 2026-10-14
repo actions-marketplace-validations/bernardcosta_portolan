@@ -45,7 +45,7 @@ covers:
 
 - `summary` (required): a non-empty string.
 - `audience` (optional): only the value `agent`, for detail-grade pages. Any other value is an error.
-- `covers` (optional): a list of code paths the page rests on.
+- `covers` (optional): a list of code paths the page rests on. Anything other than a list of strings is an error.
 
 Do not put dates, authors or commits in frontmatter.
 
@@ -66,8 +66,8 @@ Known keys:
 | Key | Type | Notes |
 | --- | --- | --- |
 | `name` | string | Required, not empty. |
-| `repo` | string | Optional. |
-| `owner` | string | Optional. |
+| `repo` | string | Optional. Must be a string when set. |
+| `owner` | string | Optional. Must be a string when set. |
 | `issues.pattern` | regular expression | Optional. How Spriggs finds linked issue IDs in the title and description. Default `#\d+`. Must be a valid regular expression. |
 | `issues.url` | string | Optional. |
 | `chat.url` | string | Optional. |
@@ -98,16 +98,19 @@ The body is two or three sentences on what changed, why, and what a reader must 
 How the fields are filled:
 
 - `kind` comes from the Conventional Commits type when there is one (`feat` gives `added`, `fix` gives `fixed`, `perf` gives `changed`, and `refactor`, `chore`, `ci`, `build`, `test`, `style`, `docs` give `internal`). The model may narrow `added` to `changed`. With no type, the model chooses; `unknown` becomes `changed`.
-- `breaking` is set when a title or commit subject has `!` after its type, or a line in the description or a commit body starts with `BREAKING CHANGE:`.
+- `breaking` is set when a title or commit subject has `!` after its type, or a line in the description or a commit body starts with `BREAKING CHANGE:` (or `BREAKING-CHANGE:`).
+- `docs` keeps only paths the run wrote or that already exist under `docs/`.
 - An `internal` change gets no entry, unless the model marks it as a large refactor.
 - In `--local` mode the entry is printed, not written.
 
 ## What the post-run check refuses
 
-After the model finishes, Spriggs checks every file it wrote. A file written back with its original content does not count. The run fails, and every write is undone, when:
+After the model finishes, Spriggs checks every file it wrote. A file written back with its original content does not count. The check fails when:
 
 - a written file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
 - a markdown page has missing or invalid frontmatter;
 - `docs/portolan.yml` breaks the rules above;
 - the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs init` has no cap);
-- in CI, any other file in the working tree changed.
+- in CI, on a pull request run, any other file in the working tree changed.
+
+On a pull request run, a failed check fails the run and every write is undone. On `spriggs init`, the files are left in place for you to review and init exits with code 1.

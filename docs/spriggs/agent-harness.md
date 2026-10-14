@@ -22,30 +22,30 @@ All model work goes through one loop (`agent/loop.ts`). An **agent** (`agent/age
 | `docs`, large tier | `spriggs run`, above 1,500 lines | same | 40 | 1,500,000 | 15 min | no |
 | `init` | `spriggs init` | `list_files`, `search`, `read_file`, `write_doc`, `finish` | 120 | 2,000,000 (`SPRIGGS_INIT_TOKENS`) | 45 min | yes |
 
-Tokens count input not served from the provider's cache, plus output.
+Tokens count input not served from the provider's cache, plus output. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
 
 ## The loop
 
 Each turn: check the budget, send the whole history to the provider, run the tool calls in the reply, add the results, repeat until `finish` succeeds.
 
 - **Budget.** Over the time or token limit, or past the last turn without `finish`, the loop throws an `AgentError` that carries the usage so far.
-- **Wrap-up.** For an agent with a wrap-up message, once 80% of turns, tokens or time is spent, the message is sent once as a user turn.
-- **Output limit.** One reply may be up to 32,000 tokens. A reply cut at the limit has its tool calls refused with advice to write a shorter file or split it. A second cut reply ends the run.
+- **Wrap-up.** For an agent with a wrap-up message, once 80% of turns, tokens or time is spent, the message is sent once as a user turn, and the console logs `budget: nearly spent; told the model to wrap up`.
+- **Output limit.** One reply may be up to 32,000 tokens. A reply cut at the limit has its tool calls refused with advice to write a shorter file or split it, and the console logs `reply cut at the output limit; asked for a shorter one`. A second cut reply ends the run.
 - **No tool call.** If the model stops without calling a tool and has not finished, it is told once to call `finish`. A second time ends the run.
 - **Must-read files.** Changed files whose diff was not inline must be seen before `finish`. The first `finish` with unread files is refused and lists them; the second is accepted.
 - **Seen files.** A file counts as seen when its diff was inline, or a `read_diff` or `read_file` call on it succeeded and was not cut.
-- **Context clearing.** When one request goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000), tool results older than the last three tool turns are replaced with a short note. Call IDs and order stay, so the model can call the tool again.
+- **Context clearing.** When one request goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window; about 120,000 suits a 200K-token window), tool results older than the last three tool turns are replaced with a short note. Call IDs and order stay, so the model can call the tool again. The console logs `context: cleared N older tool result(s)`.
 - A call to a tool the agent does not have is refused.
 
 ## The tool pool
 
 The tools are the only way the model touches anything: no shell, no network. Paths are made relative to the repository; a path that escapes it is refused.
 
-- `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files for `init`).
-- `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -E --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in `init`. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more.
+- `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files that git does not ignore, for `init`).
+- `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -E --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in `init`. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Binary and generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more.
 - `read_file(path, start, lines)`: whole lines up to 64 KB per call, with a note naming the next line to ask for. A single line over 64 KB is cut and marked. Only regular files inside the repository; symlinks are refused.
 - `read_diff(path)`: the diff of one changed file, cut at 64 KB. A cut diff does not count as seen. For a new file not in git yet it says to use `read_file`.
-- `write_doc(path, content)`: see the rules in [the docs contract](../reference/docs-contract.md). Also refused: content over 80,000 characters, and a path that resolves outside `docs/` through a symlink. Markdown frontmatter and `portolan.yml` are checked on every write. The first write of a file records its old content, so the run can undo it.
+- `write_doc(path, content)`: see the rules in [the docs contract](../reference/docs-contract.md). Also refused: content over 80,000 characters, and a path that resolves outside `docs/` through a symlink. In a repository with no `docs/` folder yet, it creates the folder. Markdown frontmatter and `portolan.yml` are checked on every write. The first write of a file records its old content, so the run can undo it.
 - `finish(title, kind, body, docs, notes, large_refactor)`: ends the run. Needs a title and a body.
 
 ## Providers
@@ -65,4 +65,4 @@ Both clients use a five-minute request timeout. To add a provider, implement the
 
 ## Init exit codes
 
-`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the `stopped early:` log line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.
+`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the report's **Stopped early** line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.

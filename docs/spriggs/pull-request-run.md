@@ -43,7 +43,7 @@ Stage one of the gate reads plain facts, with no model:
 
 - whether there is a description, whether it has a **Why** section (the text under a heading named "Why", HTML comments removed), and its word count;
 - the Conventional Commits type, from the title or else the first commit subject that has one, and the kind it maps to;
-- whether the change is breaking;
+- whether the change is breaking: the title or a commit subject has `!` after its type (for example `feat!:`), or the description or a commit body has a line that starts with `BREAKING CHANGE:` (or `BREAKING-CHANGE:`). The words quoted inside a sentence do not count;
 - linked issue IDs (`#123` by default, or `issues.pattern` from `portolan.yml`);
 - files and lines changed. Lockfiles and similar generated files (`*.lock`, `package-lock.json`, `pnpm-lock.yaml`, `go.sum`, `Cargo.lock` and others) are not counted and not shown to the model;
 - whether the change touches an API (`api/` folders, `.proto`, `.graphql`, OpenAPI files), a schema or migration, or configuration files (YAML, TOML, JSON, `.env.example` outside `docs/`). These are shown in the comment only; they do not change the verdict.
@@ -62,13 +62,24 @@ Stage two is a set of rules (`decide.ts`). A reason counts as stated when there 
 
 On abstain, Spriggs writes nothing and sets `docs:needs-input`. The tier picks the agent's budget (see [agent-harness.md](agent-harness.md)).
 
-Spriggs also notes drift. The sticky comment stores a hash of the description and the head commit. If the description is the same as last time but new commits arrived, the comment shows a **Heads up** with the number of new commits, and the model is told to prefer the commit messages for them. This never blocks.
+Spriggs also notes drift. The sticky comment stores a hash of the description and the head commit. If the description is the same as last time but new commits arrived, the comment shows a **Heads up** with the number of new commits, and the model is told to prefer the commit messages for them. Spriggs's own docs commit is not counted. This never blocks.
 
 ## 5. Agent run
 
-Spriggs picks the model (see the Model section of [setup.md](../setup.md)). A missing model or key fails the run here. The model gets one message with the title, description and commits (marked as untrusted author data), the gate's facts, the changed files, the list of docs with their summaries, the docs whose `covers` match the diff, and as many whole-file diffs as fit in about 320 KB. Files that do not fit are listed as "not shown", and the model must read them before it finishes.
+Spriggs picks the model (see [configuration.md](../reference/configuration.md#how-the-model-is-picked)). A missing model or key fails the run here. The model gets one message with:
 
-After the run, Spriggs counts which changed files the model saw and logs `coverage: read N/M`.
+- the title, description and commits (subject and body), marked as untrusted author data;
+- the gate's facts;
+- the changed files with line counts;
+- every tracked file under `docs/` except change entries. Markdown pages show their `summary` (and `audience: agent` when set). Other files, such as `portolan.yml`, show the path only. Specs under `docs/api/` are marked as read-only;
+- the docs whose `covers` match the diff (see [the docs contract](../reference/docs-contract.md#how-covers-is-used));
+- as many whole-file diffs as fit in about 320 KB (about 5,000 changed lines). A file's diff is never cut in the middle. Files that do not fit are listed as "not shown", and the model must read them before it finishes; the first `finish` without them is refused, a second one is accepted.
+
+The model is told to edit existing pages in place. It creates a new page only when the change adds a new area with its own behaviour (a service, an API, a command group, a data format), no page's `covers` touches it, and the facts do not fit in one section of an existing page. A new page always gets a `summary` and `covers`. The model does not split, move or delete pages. When it edits a page that has no `covers`, it adds them.
+
+After the run, Spriggs counts which changed files the model saw (inline, or read with `read_diff` or `read_file`; a `read_diff` result cut at 64 KB does not count) and logs `coverage: read N/M`.
+
+If the conversation no longer fits the model's context window, the provider rejects the request; nothing is cut. The run fails with a message that says the change does not fit. To fix it, use a model with a larger window, lower `SPRIGGS_CONTEXT_TOKENS` so older tool results are cleared sooner (see [agent-harness.md](agent-harness.md#the-loop)), or split the pull request. A run that runs out of turns, tokens or time before `finish` also fails.
 
 ## 6. Post-run check
 
@@ -76,11 +87,11 @@ After the run, Spriggs counts which changed files the model saw and logs `covera
 
 ## 7. Change entry
 
-The run is partial when the verdict was partial (`reason-missing`) or when some changed files went unread (`diff-too-large`). The entry is written unless the change is `internal` and not a large refactor. See [the docs contract](../reference/docs-contract.md#change-entries) for the format.
+The run is partial when the verdict was partial (`reason-missing`) or when some changed files went unread (`diff-too-large`). The entry is written unless the change is `internal` and not a large refactor. In `--local` mode it is printed to the console instead of written, since there is no pull request number. See [the docs contract](../reference/docs-contract.md#change-entries) for the format.
 
 ## 8. Commit and push
 
-When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line, at most 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run.
+When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line, at most 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run. After a push, the comment's hidden marker and the commit status name the new docs commit.
 
 ## 9. Report
 
@@ -92,6 +103,6 @@ Each run that is not skipped or superseded posts the sticky comment, sets one la
 | Nothing to write, everything read | `docs:none` | success |
 | Reason missing, or changed files left unread | `docs:partial` | success |
 | Gate abstained | `docs:needs-input` | success, or failure when the change is breaking or `SPRIGGS_BLOCKING=true` |
-| Failed (configuration, agent error, budget, check, entry or push) | `docs:needs-input` | failure |
+| Failed (configuration, agent error, budget, context window, check, entry or push) | `docs:needs-input` | failure |
 
-The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the first 140 characters of the reason instead. The comment's first line is the label in bold and what it means. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the cold start (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit, any note from the model, any unread files, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals.
+The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the first 140 characters of the reason instead. The comment's first line is the label in bold and what it means. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the cold start (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit (new ones marked "(new page)"), any note from the model, any unread files under **Not read:**, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals, including the size and the line limit.

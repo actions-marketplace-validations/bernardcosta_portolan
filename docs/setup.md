@@ -1,25 +1,12 @@
 ---
 summary: Get a working copy running with Bun on the host. No Docker.
 covers:
-  - packages/spriggs/src/run.ts
-  - packages/spriggs/src/init.ts
-  - packages/spriggs/src/forge/local.ts
-  - packages/spriggs/src/forge/github.ts
-  - packages/spriggs/src/context.ts
-  - packages/spriggs/src/gate/signals.ts
-  - packages/spriggs/src/agent/model.ts
-  - packages/spriggs/src/agent/agents.ts
-  - packages/spriggs/src/agent/init-prompt.ts
-  - packages/spriggs/src/agent/loop.ts
-  - packages/spriggs/src/agent/tools.ts
-  - packages/spriggs/src/agent/prompt.ts
-  - packages/spriggs/src/agent/providers/types.ts
-  - packages/spriggs/src/agent/providers/anthropic.ts
+  - package.json
+  - packages/spriggs/package.json
   - packages/spriggs/src/cli.ts
-  - packages/spriggs/src/gate/decide.ts
-  - packages/spriggs/src/docs/tree.ts
-  - packages/spriggs/src/enforce.ts
-  - packages/spriggs/src/report.ts
+  - packages/spriggs/src/forge/local.ts
+  - packages/spriggs/src/agent/model.ts
+  - .github/workflows/ci.yml
   - .github/workflows/spriggs.yml
   - .env.example
   - action.yml
@@ -39,14 +26,14 @@ covers:
 1. Clone the repo.
 2. Copy `.env.example` to `.env` and add one provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`). Set `SPRIGGS_MODEL` too, unless you only use Anthropic (see [Model](#model)). `.env` is gitignored.
 3. Install dependencies: `bun install`.
-4. Run the checks: `bun run check` and `bun run typecheck`. This runs Biome (lint and format) and `tsc`.
+4. Run the checks: `bun run check` and `bun run typecheck`. This runs Biome (lint and format) and `tsc`. The `ci` workflow (`.github/workflows/ci.yml`) runs the same two checks, after `bun install --frozen-lockfile`, on every pull request and on pushes to `main`.
 
 ## Commands
 
 | Command | Does |
 | --- | --- |
-| `bun run check` | Lint and format check |
-| `bun run typecheck` | Typecheck |
+| `bun run check` | Lint and format check (`biome ci .`) |
+| `bun run typecheck` | Typecheck (`tsc --noEmit -p packages/spriggs`) |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
 | `bun run spriggs init` | Check the docs of the whole repository against the code and fill the gaps (see [Cold start](#cold-start-spriggs-init)) |
@@ -61,53 +48,21 @@ portolan spriggs init [--model <provider/model>]
 - `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
 - `--model <provider/model>` overrides `SPRIGGS_MODEL`.
 
+Every flag and environment variable is listed in [configuration.md](reference/configuration.md).
+
+## Local run
+
 In `--local` mode the diff is the working copy (uncommitted and untracked files included) against the merge-base with `<ref>`. The commit messages between the merge-base and `HEAD` are passed to the model too. The repo does not need an `origin` remote, so a fresh or throwaway repo works. A local run is not skipped when the head commit is Spriggs's own, so you can run right after a Spriggs commit. The comment, label and status are printed to the console, not posted. There is no pull request number, so Spriggs prints the change entry to the console instead of writing a file under `docs/changes/`. The post-run check still runs, but it skips the working-tree part, because a local copy holds your own uncommitted changes. Docs edits stay in the working tree for you to review; nothing is committed. When no docs were written and no entry is needed, the run reports no docs change.
+
+What each step of a run does is in [A pull request run](spriggs/pull-request-run.md).
 
 ## Cold start: spriggs init
 
-A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` from the repository root instead. It starts a separate agent that explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. Run it again whenever the docs fall behind; each run starts with what the last one left in `docs/todo.md`. Run locally, nothing is committed: review the result, then commit it and open a pull request yourself. You can also run it from the GitHub Action, which opens the pull request for you (see [Run init from the action](#run-init-from-the-action)).
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` from the repository root. A separate agent explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. It leaves a `docs/todo.md` listing what it did not write or check, and the next run starts with that list. Locally nothing is committed: review the result, then commit it and open a pull request yourself. The run prints a report between the lines `--- init result ---` and `--- end ---`, and exits with 0 (done), 1 (the post-run check failed) or 3 (stopped early; the pages so far stay).
 
-How it works:
+You can also start it from the GitHub Action, which opens the pull request for you. Add `workflow_dispatch:` under `on:` in your Spriggs workflow, then open **Actions → spriggs → Run workflow**.
 
-1. **Survey.** The agent gets the project name from `docs/portolan.yml` (if any), the list of existing docs with their summaries, the body of `docs/todo.md` from the last run (if any, first 20,000 characters; a symlink is ignored), and an outline of the files (root files, then folders two levels deep with file counts). The outline holds tracked files and untracked files that git does not ignore, so you can run init before the first commit. Ignored files, such as `.env`, stay hidden. The agent starts with the open items of the last run, then reads manifests, the README, CI files and entry points.
-2. **Plan.** Before any page, it writes `docs/todo.md` with two lists. **To write**: one item per page it means to write, with the path, what it covers and the code it rests on. **To check**: the existing pages it means to check against the code. It keeps the open items of the last run. Most important first.
-3. **Work.** It writes `portolan.yml` if missing, `overview.md`, `setup.md`, and one page per big part of the repository (a feature, subsystem, API, data format or workflow), grouped in folders, and checks the existing pages. After each page it rewrites the todo so it lists only what is left; a page checked only in part stays under **To check**. Existing docs keep every fact the code supports, and the agent changes what the code contradicts. It may also clean up: replace text that repeats another page with a link to that page, and move a section to the page where it belongs. It names every removal and move in its note, so the reviewer can check them.
-4. **Finish.** When the todo has no list items left and the model wrote it in this run, Spriggs deletes `docs/todo.md`, and the report says so if the todo came from an earlier run. It never deletes a todo the model did not write. Otherwise the file stays as the list of pages still to write or check, and the next run starts with it. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) both count as list items.
-
-The init agent's tools are `list_files`, `search`, `read_file`, `write_doc` and `finish`. `search` runs `git grep -E` over tracked files and untracked files that git does not ignore, skips binary and generated files, and returns at most 200 matching lines (each cut at 300 characters). Paths with non-ASCII characters come out as they are, not quoted.
-
-Budget: 120 turns, 45 minutes, and 2,000,000 tokens (input not served from cache, plus output). Set `SPRIGGS_INIT_TOKENS` to change the token cap. When 80% of any of these is spent, Spriggs tells the model once to stop exploring, make the todo accurate and finish; the console logs `budget: nearly spent; told the model to wrap up`. If the run still stops early (budget, context window or model error), the pages written so far stay, and the console says `stopped early` with the reason and the tokens used. Any error counts as an early stop, even one with no message.
-
-After the run, Spriggs checks the written files the same way it does after a pull request run, but with no line cap and without the working-tree check. It then prints the cold start report between the lines `--- init result ---` and `--- end ---`. The report is written like the sticky comment of a pull request run:
-
-- a **Stopped early** line with the reason, when the run stopped before `finish`;
-- the files written, with new ones marked "(new page)", or "I wrote no pages";
-- how many items are left to write or check (listed in `docs/todo.md`), or "I wrote and checked every page I planned" when the run finished with nothing left;
-- "I removed `docs/todo.md`: nothing is left." when the run cleared a todo from an earlier run;
-- any note from the model;
-- a small line with the model name, tokens and turns.
-
-The model's note, the stop reason and the file paths are each put on one line, with line breaks and control characters replaced by spaces. If the check fails, Spriggs leaves the files in place for you to review.
-
-Exit codes:
-
-| Code | Means |
-| --- | --- |
-| 0 | The run finished and the check passed |
-| 1 | The post-run check failed (this wins over an early stop) |
-| 3 | The run stopped before `finish`; the pages written so far stay and `docs/todo.md` lists what is left |
-
-### Run init from the action
-
-The same workflow runs both. The action's `command` input is empty by default, and then the event decides: a pull request runs `run`, and a start by hand (`workflow_dispatch`) runs `init`. Set `command: run` or `command: init` to force one. So to allow the cold start, add `workflow_dispatch:` under `on:` in your Spriggs workflow (see [Use Spriggs in another repository](#use-spriggs-in-another-repository)). Then open **Actions → spriggs → Run workflow**. GitHub shows the button only once the workflow file is on the default branch.
-
-If you had a separate init workflow (for example `spriggs-init.yml` with `command: init`), it still works, but you can delete it once `workflow_dispatch:` is in the main workflow.
-
-After init, the action commits `docs/` to a new branch `spriggs/init-<run id>` and opens a pull request titled `docs: Spriggs catches the docs up with the code` against the branch the workflow ran on. It never pushes to that branch. Only files under `docs/` are committed. If init changed nothing under `docs/`, no pull request is opened. The pull request body is the [cold start report](#cold-start-spriggs-init) of the run, without its two marker lines. If the log holds no report, the body is one line saying Spriggs checked the docs against the code and filled the gaps it found. Review the pages like any other change; they are a draft from the code.
-
-If init stopped early (exit code 3), the action still opens the pull request with the pages written so far, and the report in its body starts with the **Stopped early** reason. Then the job fails with an error that points to `docs/todo.md` for what is left. If the post-run check fails, or init exits with any other code, the step fails and no pull request is opened.
-
-The commit author is `github-actions[bot]`, or `<slug>[bot]` when `app-id` is set (see [Run as a GitHub App](#run-as-a-github-app-optional)). With the workflow's own token, the repository setting **Actions → General → Allow GitHub Actions to create and approve pull requests** must be on, or GitHub refuses to open the pull request. With a GitHub App it is not needed.
+The steps, the report, the exit codes and the pull request the action opens are in [The cold start](spriggs/cold-start.md).
 
 ## Model
 
@@ -149,11 +104,9 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-The `workflow_dispatch:` line lets you start the [cold start](#run-init-from-the-action) by hand from the same file. The concurrency group runs one job at a time per pull request, and one cold start at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
+The `workflow_dispatch:` line lets you start the [cold start](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one cold start at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
 
-Inputs, all optional: `command` (empty by default, so the event decides: `run` on a pull request, `init` on `workflow_dispatch`; set `run` or `init` to force one; any other value stops the step with exit code 2), `model` (`provider/model`, default `anthropic/claude-opus-5-5` when the Anthropic key is set), `anthropic-api-key`, `openai-api-key`, `openrouter-api-key`, `github-token` (default: the workflow's own token), `app-id` and `app-private-key` (see [Run as a GitHub App](#run-as-a-github-app-optional)), and `max-lines` (default 5000). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`.
-
-The action does not read settings from files in your repository. It starts Bun with `--no-env-file` and with an empty `bunfig.toml` that ships with the action (`scripts/bunfig.toml`), so Bun ignores any `.env*` file and any `bunfig.toml` in the repository under review. A setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step. Local runs are not affected: `bun run spriggs` still loads your own `.env`. This protection does not apply with `uses: ./`, where the action's own files come from the pull request.
+The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
 
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 
@@ -164,7 +117,7 @@ Any provider from the [Model](#model) section works. The default is a convenienc
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. While the repository has no doc pages, the sticky comment of each pull request run points to the cold start and says the workflow needs `workflow_dispatch:` for it. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) first, locally or [from the action](#run-init-from-the-action).
+No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. While the repository has no doc pages, the sticky comment of each pull request run points to the cold start. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) first, locally or from the action.
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
 
@@ -172,13 +125,12 @@ While this repository is private, other repositories can use the action only whe
 
 ## CI
 
-`.github/workflows/spriggs.yml` in this repository uses the action itself (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the cold start, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless you set up a GitHub App (see [Run as a GitHub App](#run-as-a-github-app-optional)).
+This repository has two workflows:
 
-Each run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status on the head commit. Spriggs reads the current labels from GitHub before it sets its own, so a run that waited in the queue still leaves one label. Only a comment posted by Spriggs itself counts as the sticky comment. The comment is written in plain first-person words. Its first line is the docs label in bold, followed by what that label means for this change (for example, why it is partial and what to add). When the repository had no doc pages at the start of the run, a **No docs yet** note points to the cold start. Then comes what the run did, including the list of files in the `docs:` commit; files the run created are marked "(new page)". Then a folded **What I saw** table with the signals the gate read, including the size and the line limit. The commit status carries a one-line form of the result, starting with `done:`, `partial:` or `stopped:`. Runs are skipped for pull requests from forks or Dependabot, pull requests opened from the default branch, pull requests that change only `docs/`, and Spriggs's own commits. For Spriggs's own pushes the job does not start at all: the workflow skips it when the actor is `github-actions[bot]` or the App's bot, and the harness checks again. Editing the description reruns Spriggs only when the body changed and the pull request is labelled `docs:needs-input` or `docs:partial`.
+- `ci.yml` runs `bun run check` and `bun run typecheck` on pull requests and on pushes to `main`.
+- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the cold start, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes: it is skipped when the actor is `github-actions[bot]` or the App's bot, and the harness checks again.
 
-The status is `success` in most cases. It is `failure` when the run fails (missing model or key, agent error, failed post-run check, failed push of the docs commit), which also sets `docs:needs-input`. When the gate stops, the status is `failure` only if the change is breaking or the environment variable `SPRIGGS_BLOCKING` is `true`; otherwise it stays `success`. A change is breaking when the title or a commit subject has a `!` after its type (for example `feat!:`), or when the description or any commit body has a line that starts with `BREAKING CHANGE:`. The words quoted inside a sentence do not count.
-
-The model sees the subject and body of each commit in the pull request, oldest first. If the description has not changed since the last run but new commits were pushed, the comment shows a **Heads up** note with the number of newer commits and asks whether the reason still holds. Spriggs's own docs commit is not counted. The model is told to prefer the commit messages for those commits. This note never blocks the run.
+Each Spriggs run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md).
 
 ### Run as a GitHub App (optional)
 
@@ -196,41 +148,6 @@ With the workflow's own token, comments and commits appear as `github-actions[bo
 5. Pass them to the action: `app-id: ${{ vars.SPRIGGS_APP_ID }}` and `app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}` under `with:`. This repository's own workflow already does.
 
 When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. This also works on events that are not pull requests, such as a `workflow_dispatch` init run. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
-
-### Size and coverage
-
-The model gets the whole diff of each changed file inline, up to about 320 KB in total (about 5,000 changed lines). Files that do not fit are listed as "not shown". If the model tries to finish before reading them, Spriggs reminds it once; a second finish is accepted. The model's `read_file` tool returns up to 64 KB per call and takes a start line and a line count, so it can read a large file in parts. A single line longer than 64 KB is cut at that size and marked as cut. `read_file` only reads regular files inside the repo, not symlinks.
-
-The pull request agent's tools are `list_files`, `read_file`, `read_diff`, `write_doc` and `finish`. A call to any other tool is refused.
-
-The budget depends on the size of the change, counted in changed lines with generated files left out:
-
-| Size | Turns | Tokens | Time |
-| --- | --- | --- | --- |
-| Up to 1,500 lines | 30 | 600,000 | 10 minutes |
-| 1,501 lines up to the limit | 40 | 1,500,000 | 15 minutes |
-
-Tokens are input tokens not served from the provider's cache, plus output tokens.
-
-The limit is 5,000 lines. Set the environment variable `SPRIGGS_MAX_LINES` (the action's `max-lines` input) to change it. Above the limit, Spriggs writes nothing, sets `docs:needs-input` and asks you to split the pull request.
-
-Spriggs counts which changed files (generated files left out) the model actually saw, inline or by reading them with `read_diff` or `read_file`, and logs `coverage: read N/M`. A `read_diff` result cut at 64 KB does not count as seen; the model must use `read_file` for the rest. If the model finishes with some changed files never seen, for example by finishing again after the reminder, the run is marked `docs:partial` (even when the docs needed no change), the comment lists the unread files under **Not read:**, and the change entry records partial coverage. A run that runs out of turns, tokens or time before it finishes fails instead and sets `docs:needs-input`.
-
-The model gets a list of every tracked file under `docs/` except change entries. Markdown pages show their `summary` (and `audience: agent` when set). Other files, such as `portolan.yml`, are listed by path only. Generated specs under `docs/api/` are marked as read-only: the model can read them but never edit them.
-
-The model edits existing pages in place. It creates a new page only when the change adds a new area with its own behaviour (a service, an API, a command group, a data format), no page's `covers` touches it, and the facts do not fit in one section of an existing page. A new page always gets a `summary` and `covers`. The model does not split, move or delete pages. When it edits a page that has no `covers`, it adds them.
-
-A doc written back with its original content does not count as a write. In a repo with no `docs/` folder yet, `write_doc` creates it. `write_doc` refuses a path more than two folders deep under `docs/` (for example `docs/a/b/c/page.md`).
-
-### Output limit
-
-The model may write up to 32,000 tokens in one reply, and one doc file written with `write_doc` may be up to 80,000 characters. If a reply is cut at the output limit, Spriggs runs none of its tool calls. It asks the model once to write the file in a shorter form or split it into two files, and logs `reply cut at the output limit; asked for a shorter one`. If the next reply is cut too, the run fails and sets `docs:needs-input`.
-
-### Context window
-
-Once a single request to the model goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window), Spriggs clears the contents of tool results older than the last three tool turns from the history. The model can call the tool again if it needs that content. The console logs `context: cleared N older tool result(s)`. For a model with a 200K-token window, set `SPRIGGS_CONTEXT_TOKENS` to about 120000.
-
-If a request is still larger than the model's context window, the provider rejects it; nothing is cut. The run fails and sets `docs:needs-input`, with a message that says the change does not fit the model's window. With Anthropic, a reply stopped because the context window filled up gets the same message. To fix it, use a model with a larger window, lower `SPRIGGS_CONTEXT_TOKENS` so older tool results are cleared sooner, or split the pull request.
 
 ## Layout
 
