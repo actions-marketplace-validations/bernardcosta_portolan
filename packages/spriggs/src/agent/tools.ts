@@ -72,11 +72,11 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "search",
     description:
-      "Search the repository's files for a regular expression (git grep -E). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
+      "Search the repository's files for a regular expression (git grep -P, Perl syntax: \\b, \\d and (?i) work). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
     schema: {
       type: "object",
       properties: {
-        pattern: { type: "string", description: "POSIX extended regular expression." },
+        pattern: { type: "string", description: "Perl-compatible regular expression." },
         path: {
           type: "string",
           description: 'Directory to search under, or "" for the whole repository.',
@@ -233,13 +233,23 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
       if (dir === undefined) return err("invalid path");
       // -e keeps a pattern that starts with "-" a pattern; -I skips binary files. --untracked adds
       // new files that git does not ignore, so the search sees what list_files and read_file see.
-      const args = ["-c", "core.quotePath=false", "grep", "-n", "-I", "-E", "--untracked"];
-      const p = Bun.spawnSync(["git", ...args, "-e", pattern, "--", dir || "."], {
-        cwd: rt.cwd,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      if (p.exitCode === 1) return ok("no matches");
+      // -P (PCRE) is the dialect models write; with -E, "\b20\b" matches nothing and gives no error.
+      // A git built without PCRE falls back to -E, and the result says so.
+      const args = ["-c", "core.quotePath=false", "grep", "-n", "-I", "--untracked"];
+      const grep = (dialect: string) =>
+        Bun.spawnSync(["git", ...args, dialect, "-e", pattern, "--", dir || "."], {
+          cwd: rt.cwd,
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      let p = grep("-P");
+      let note = "";
+      if (p.exitCode > 1 && /PCRE/i.test(p.stderr.toString())) {
+        p = grep("-E");
+        note =
+          "[This git has no Perl regex support: the pattern ran as POSIX ERE, where \\b and \\d do not work.]\n";
+      }
+      if (p.exitCode === 1) return ok(`${note}no matches`);
       if (p.exitCode !== 0) return err(`search failed: ${p.stderr.toString().trim()}`);
       const lines = p.stdout
         .toString()
@@ -252,7 +262,7 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
         lines.length > SEARCH_CAP_LINES
           ? `\n[${lines.length} matches; the first ${SEARCH_CAP_LINES} are shown. Narrow the pattern or the path.]`
           : "";
-      return ok(shown.join("\n") + tail);
+      return ok(note + shown.join("\n") + tail);
     }
     case "read_file": {
       const path = safeRel(field(input, "path"));
