@@ -72,7 +72,7 @@ export const TOOL_DEFS: ToolDef[] = [
   {
     name: "search",
     description:
-      "Search the repository's files for a regular expression (git grep -P, Perl syntax: \\b, \\d and (?i) work). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined.",
+      "Search the repository's files for a regular expression (git grep -P, Perl syntax: \\b, \\d and (?i) work). Returns file:line:text, at most 200 lines. Use it to find commands, flags, settings, endpoints and where things are defined. A pattern finds only the words in it: to find a fact, try several patterns and wordings, and run them together.",
     schema: {
       type: "object",
       properties: {
