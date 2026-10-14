@@ -28,6 +28,8 @@ Tokens count input not served from the provider's cache, plus output.
 
 Each turn: check the budget, send the whole history to the provider, run the tool calls in the reply, add the results, repeat until `finish` succeeds.
 
+The console log shows each turn: the turn number and the model's text, then one line per tool call with its main argument (the path, the search pattern, or the page and its line count), and the reason when a call was refused. The text is cut at 400 characters. Model text, paths and refusals are put on one line each, and every log line starts with Spriggs's own text, so nothing from the model or the repository can pass for a CI workflow command.
+
 - **Budget.** Over the time or token limit, or past the last turn without `finish`, the loop throws an `AgentError` that carries the usage so far.
 - **Wrap-up.** For an agent with a wrap-up message, once 80% of turns, tokens or time is spent, the message is sent once as a user turn.
 - **Output limit.** One reply may be up to 32,000 tokens. A reply cut at the limit has its tool calls refused with advice to write a shorter file or split it. A second cut reply ends the run.

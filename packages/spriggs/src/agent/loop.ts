@@ -1,3 +1,4 @@
+import { flat } from "../report";
 import type { Agent } from "./agents";
 import type { Provider, Turn, Usage } from "./providers/types";
 import { type FinishResult, runTool, safeRel, type ToolRuntime, toolDefs } from "./tools";
@@ -90,9 +91,11 @@ export async function runAgent(opts: {
     usage.cached += c.usage.cached;
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
     if (c.usage.input > CONTEXT_SOFT_LIMIT) clearOldToolResults(turns);
-    console.log(
-      `turn ${turn}: ${c.calls.map((x) => x.name).join(", ") || `no tool call (${c.stop})`}`,
-    );
+    // Model text and file names come from the repository: one line each, never starting with `::`
+    // (the CI runner would read that as a workflow command).
+    const said = clip(flat(c.text), 400);
+    console.log(`turn ${turn}${said ? `: ${said}` : ""}`);
+    if (c.calls.length === 0) console.log(`  no tool call (${flat(c.stop)})`);
 
     // A reply cut at the output limit: its tool calls, if any, are incomplete. One retry with clear advice.
     if (c.stop === "max_tokens" || c.stop === "length") {
@@ -146,7 +149,10 @@ export async function runAgent(opts: {
           console.log(`  finish: ${missed.length} changed file(s) not read yet`);
         }
       }
-      if (r.isError) console.log(`  ${call.name}: ${r.content.split("\n")[0]}`);
+      const line = describe(allowed.has(call.name) ? call.name : "unavailable tool", call.input);
+      console.log(
+        `  ${clip(flat(line), 300)}${r.isError ? ` -> ${clip(flat(r.content), 200)}` : ""}`,
+      );
       results.push({ id: call.id, content: r.content, isError: r.isError });
     }
     turns.push({ role: "tool", results });
@@ -171,6 +177,22 @@ function clearOldToolResults(turns: Turn[]): void {
   }
   if (cleared) console.log(`  context: cleared ${cleared} older tool result(s)`);
 }
+
+/** A tool call for the log: the name and its main argument. */
+function describe(name: string, input: unknown): string {
+  const o = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  if (name === "search") return `search "${str(o.pattern)}"${o.path ? ` in ${str(o.path)}` : ""}`;
+  if (name === "list_files") return `list_files ${str(o.dir) || "."}`;
+  if (name === "write_doc") {
+    const lines = str(o.content).split("\n").length;
+    return `write_doc ${str(o.path)} (${lines} line${lines === 1 ? "" : "s"})`;
+  }
+  if (name === "read_file" || name === "read_diff") return `${name} ${str(o.path)}`;
+  return name;
+}
+
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
 
 function pathOf(input: unknown): unknown {
   return typeof input === "object" && input !== null
