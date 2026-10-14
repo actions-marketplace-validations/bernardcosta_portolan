@@ -39,8 +39,8 @@ Needs `GITHUB_TOKEN` and `GITHUB_EVENT_PATH`, which GitHub Actions sets. It read
 - **Identity.** By default `github-actions[bot]`. When `SPRIGGS_APP_SLUG` is set (the action does this when it mints a GitHub App token), Spriggs looks up `<slug>[bot]` and commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`. Commits by either identity count as Spriggs's own.
 - **Sticky comment.** The comment starts with a hidden line `<!-- spriggs body=<hash> head=<sha> -->`. Only a comment with that start, posted by one of Spriggs's identities, counts. The run updates it, or creates it when there is none. The hash and SHA let the next run spot a description that did not move with the code.
 - **Label.** Reads the labels as they are now (not from the event, which may be old for a queued run), removes the other `docs:*` labels and adds the new one if missing.
-- **Status.** A commit status with context `spriggs` on the head commit, description cut at 140 characters.
-- **Commit and push.** Stages everything under `docs/`, commits with hooks turned off, and pushes to the pull request's head branch. The token goes to git through an HTTP header for that one command; it is not stored in git config and is masked in errors. A rejected push because the branch moved (`non-fast-forward`, `fetch first`) returns `superseded`. Any other refusal, such as a protected branch, is an error.
+- **Status.** A commit status with context `spriggs`, description cut at 140 characters. It goes on the pull request's head commit, or on Spriggs's docs commit when the run pushed one.
+- **Commit and push.** Stages everything under `docs/`, commits with hooks turned off, and pushes to the pull request's head branch. The token goes to git through an HTTP header for that one command; it is not stored in git config and is masked in errors. A push rejected because the branch moved (`[rejected]`, `non-fast-forward`, `fetch first`) returns `superseded`. Any other refusal, such as a protected branch, is an error. With nothing staged it returns `nothing`.
 
 ## LocalForge
 
