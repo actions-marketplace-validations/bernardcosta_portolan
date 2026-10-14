@@ -31,6 +31,9 @@ In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a s
 
 - [The docs contract](reference/docs-contract.md): the `docs/` layout, frontmatter, `portolan.yml` and change entries.
 - [A pull request run](spriggs/pull-request-run.md): each step of a run, the gate rules, and the labels and statuses.
+- [The cold start](spriggs/cold-start.md): each step of `spriggs init`, its report and exit codes, and the pull request the action opens.
+- [The GitHub Action](reference/github-action.md): the action's inputs and steps, and why it ignores Bun settings from the repository under review.
+- [Configuration](reference/configuration.md): every flag and environment variable, with defaults.
 - [The agent harness](spriggs/agent-harness.md): the model loop, tools, budgets and providers.
 - [Forges](spriggs/forges.md): how Spriggs talks to GitHub, or to your working copy in `--local` mode.
 
