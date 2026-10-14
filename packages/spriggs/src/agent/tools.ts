@@ -189,7 +189,7 @@ export function safeRel(input: unknown): string | undefined {
 }
 
 /** A regular file inside the repo. A tracked symlink could point at /proc or a home directory. */
-function readableFile(cwd: string, rel: string): boolean {
+export function readableFile(cwd: string, rel: string): boolean {
   const abs = join(cwd, rel);
   if (lstatSync(abs).isSymbolicLink()) return false;
   return realpathSync(abs).startsWith(`${realpathSync(cwd)}/`);

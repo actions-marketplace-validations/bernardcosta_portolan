@@ -7,7 +7,7 @@ branding:
 
 inputs:
   command:
-    description: Leave empty and the event decides. A pull request gives run, which checks the pull request. A start by hand (workflow_dispatch) gives init, which explores the whole repository, writes a first set of docs and opens a pull request with them. Set run or init to force one.
+    description: Leave empty and the event decides. A pull request gives run, which checks the pull request. A start by hand (workflow_dispatch) gives init, which checks the docs of the whole repository against the code, fills the gaps and opens a pull request with them. Set run or init to force one.
     required: false
     default: ""
   model:

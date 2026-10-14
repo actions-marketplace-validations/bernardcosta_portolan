@@ -5,7 +5,7 @@ import { buildInitMessage, TODO_PATH } from "./agent/init-prompt";
 import { AgentError, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import type { Usage } from "./agent/providers/types";
-import { createRuntime } from "./agent/tools";
+import { createRuntime, readableFile, type ToolRuntime } from "./agent/tools";
 import { splitFrontmatter } from "./docs/frontmatter";
 import { loadPortolanConfig } from "./docs/portolan";
 import { docsIndex } from "./docs/tree";
@@ -36,6 +36,8 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
     .split("\n")
     .filter(Boolean);
   const rt = createRuntime(cwd, new Map(), untracked);
+  // The todo is the memory between runs: what the last run did not write or check.
+  const todo = await todoBody(cwd);
   console.log(`init: ${provider.model}, ${index.length} existing docs`);
 
   let notes = "";
@@ -47,7 +49,13 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
       agent: INIT_AGENT,
       provider,
       rt,
-      userMessage: buildInitMessage({ name: config?.name, index, tree: fileTree(rt.readable) }),
+      userMessage: buildInitMessage({
+        name: config?.name,
+        index,
+        tree: fileTree(rt.readable),
+        // Capped like the file outline: the page is the repository's content, and it can be any size.
+        todo: todo?.slice(0, 20_000),
+      }),
     });
     notes = agent.result.notes;
     usage = agent.usage;
@@ -70,13 +78,16 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
     return 1;
   }
 
-  const left = await todoLeft(cwd);
+  const left = await todoLeft(rt);
+  // A todo from an earlier run that the model cleared: its removal is part of the pull request.
+  const removedTodo = left === 0 && rt.originals.get(TODO_PATH) != null;
   const written = check.written.filter((p) => p !== TODO_PATH || left > 0);
   // The action takes the text between the two marker lines as the body of the pull request.
   const report = renderInitReport({
     written,
     created: check.created,
     left,
+    removedTodo,
     notes,
     stopped,
     usage,
@@ -107,14 +118,19 @@ function fileTree(paths: Iterable<string>): string {
   return lines.length ? lines.slice(0, 300).join("\n") : "(no files)";
 }
 
-/** Items left in the todo page; removes the page when it lists nothing. */
-async function todoLeft(cwd: string): Promise<number> {
+/** The body of the todo page, or undefined when there is none. Same check as read_file: no symlinks. */
+async function todoBody(cwd: string): Promise<string | undefined> {
   const abs = join(cwd, TODO_PATH);
-  if (!existsSync(abs)) return 0;
-  const body = splitFrontmatter(await Bun.file(abs).text())?.body ?? "";
+  if (!existsSync(abs) || !readableFile(cwd, TODO_PATH)) return undefined;
+  return splitFrontmatter(await Bun.file(abs).text())?.body.trim() || undefined;
+}
+
+/** Items left in the todo page; removes the page when the model wrote it this run and it lists nothing. */
+async function todoLeft(rt: ToolRuntime): Promise<number> {
+  const body = await todoBody(rt.cwd);
   // Bullets or a numbered list: the model may write either.
-  const items = body.split("\n").filter((l) => /^\s*([-*+]|\d+[.)])\s+\S/.test(l)).length;
-  if (items === 0) rmSync(abs);
+  const items = body?.split("\n").filter((l) => /^\s*([-*+]|\d+[.)])\s+\S/.test(l)).length ?? 0;
+  if (items === 0 && rt.originals.has(TODO_PATH)) rmSync(join(rt.cwd, TODO_PATH), { force: true });
   return items;
 }
 

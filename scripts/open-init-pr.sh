@@ -17,7 +17,7 @@ fi
 
 base="$GITHUB_REF_NAME"
 branch="spriggs/init-${GITHUB_RUN_ID}"
-title="docs: first set of docs from spriggs init"
+title="docs: Spriggs catches the docs up with the code"
 
 git switch --quiet -c "$branch"
 git add --all docs
@@ -32,6 +32,6 @@ git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
 body="$(mktemp)"
 # The body is the report that init printed, without its two marker lines.
 sed -n '/^--- init result ---$/,/^--- end ---$/p' "${SPRIGGS_INIT_LOG:-/dev/null}" | sed '1d;$d' > "$body"
-[ -s "$body" ] || echo "Spriggs wrote a first set of docs for this repository." > "$body"
+[ -s "$body" ] || echo "Spriggs checked the docs against the code and filled the gaps it found." > "$body"
 
 gh pr create --base "$base" --head "$branch" --title "$title" --body-file "$body"

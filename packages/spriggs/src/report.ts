@@ -96,8 +96,10 @@ export const flat = (s: string): string => s.replace(/[\p{Cc}\s]+/gu, " ").trim(
 export function renderInitReport(r: {
   written: string[];
   created: string[];
-  /** Pages still listed in docs/todo.md. */
+  /** Items still listed in docs/todo.md. */
   left: number;
+  /** The run cleared and removed a todo left by an earlier run. */
+  removedTodo: boolean;
   notes: string;
   /** Why the run stopped before `finish`, when it did. */
   stopped: string | undefined;
@@ -109,7 +111,7 @@ export function renderInitReport(r: {
   return [
     "## Spriggs: cold start report",
     "",
-    "I explored this repository and wrote a first set of docs. Review them like any other change: the pages are a first draft from the code, not a record of intent.",
+    "I explored this repository, checked its docs against the code and filled the gaps I found. Review the pages like any other change: they are a draft from the code, not a record of intent.",
     "",
     ...(r.stopped
       ? [`> **Stopped early:** ${flat(r.stopped)}. I kept the pages I had written before that.`, ""]
@@ -120,11 +122,12 @@ export function renderInitReport(r: {
     ...(r.left
       ? [
           "",
-          `**${n(r.left)} page${r.left === 1 ? "" : "s"} planned but not written.** The list is in \`docs/todo.md\`.`,
+          `**${n(r.left)} item${r.left === 1 ? "" : "s"} left to write or check.** The list is in \`docs/todo.md\`, and the next run starts with it.`,
         ]
       : r.stopped
         ? [] // stopped before the plan was written or finished: no claim that the set is complete
-        : ["", "I wrote every page I planned."]),
+        : ["", "I wrote and checked every page I planned."]),
+    ...(r.removedTodo ? ["", "I removed `docs/todo.md`: nothing is left."] : []),
     ...(notes ? ["", `A note from the run: ${notes}`] : []),
     ...(r.usage ? ["", usageLine(r.usage, r.model, r.turns)] : []),
   ].join("\n");
