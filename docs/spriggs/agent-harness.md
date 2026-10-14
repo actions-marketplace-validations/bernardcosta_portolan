@@ -41,7 +41,7 @@ The console log shows each turn: the turn number and the model's text, then one 
 
 ## The tool pool
 
-The tools are the only way the model touches anything: no shell, no network. Paths are made relative to the repository; a path that escapes it is refused.
+The tools are the only way the model touches anything: no shell, no network. Paths are made relative to the repository (`safeRel`); a path that escapes it, or that holds any control character (a line break, an escape code, a null byte), is refused. So a path cannot forge a line in the log or the report.
 
 - `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files that git does not ignore, for `init`).
 - `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -E --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in `init`. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Binary and generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more.
@@ -67,4 +67,4 @@ Both clients use a five-minute request timeout. To add a provider, implement the
 
 ## Init exit codes
 
-`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the report's **Stopped early** line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.
+`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. The `check failed:` line printed for code 1 is flattened to one line. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the report's **Stopped early** line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.
