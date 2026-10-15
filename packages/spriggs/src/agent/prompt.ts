@@ -21,7 +21,7 @@ export const DOCS_CONTRACT = `The docs/ contract:
 - Every markdown file starts with frontmatter: summary (required, one or two sentences for a person), audience: agent (only for detail-grade docs), covers (optional list of code paths the doc rests on). No dates, authors or commits in frontmatter.
 - Links between pages must work. When you rename or renumber a heading, or move or rename a page, search docs/ for links to the old anchor or path and fix them.`;
 
-/** Where a claim's evidence comes from. The common sources of wrong claims, from the argos cold start review. */
+/** Where a claim's evidence comes from. The common sources of wrong claims, from the argos survey review. */
 export const CODE_THAT_RUNS = `- Describe what the code does when it runs, not what names, comments or types suggest. Follow a call to the code that runs.
 - Before you write that something always happens or holds for every case (every provider, event, role or platform), check each branch. If it holds only in some cases, name them.
 - A component, function or setting that is defined is not in use until you find where it is used.

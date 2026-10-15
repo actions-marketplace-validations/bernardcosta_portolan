@@ -7,7 +7,7 @@ import type { HardCheck } from "./index";
 /**
  * Relative links in docs/ must point to a file that exists and, for a markdown page, to a heading on it.
  * Scope "run": only links from or to a page the model wrote, so a pull request is not filled with fixes
- * to links it did not touch. Scope "all": every link, for the cold start, whose job is the whole doc set.
+ * to links it did not touch. Scope "all": every link, for the survey, whose job is the whole doc set.
  * Change entries (history) and docs/api/ (generated) cannot be edited by the model and are not checked.
  */
 export const deadLinks = (scope: "run" | "all" = "all"): HardCheck => ({

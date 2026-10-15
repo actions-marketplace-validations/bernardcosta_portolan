@@ -4,7 +4,7 @@ import type { Verdict } from "./gate/decide";
 import { maxLines } from "./gate/decide";
 import type { Signals } from "./gate/signals";
 
-// The sticky comment and the cold start report. Written as a colleague would write it: first person, plain words, short sentences.
+// The sticky comment and the survey report. Written as a colleague would write it: first person, plain words, short sentences.
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -117,7 +117,7 @@ function usageLine(u: Usage, model: string | undefined, turns?: number): string 
 }
 
 /**
- * Model or error text on one line. In the cold start report no such text may start a line: a line of
+ * Model or error text on one line. In the survey report no such text may start a line: a line of
  * its own could pass as a marker line of the report or as a workflow command of the CI runner.
  */
 export const flat = (s: string): string => s.replace(/[\p{Cc}\s]+/gu, " ").trim();
@@ -140,7 +140,7 @@ export const quiet = (s: string): string =>
     .join("");
 
 /**
- * A model note for the init report. Keeps the line breaks: the note is often a list. Other control
+ * A model note for the survey report. Keeps the line breaks: the note is often a list. Other control
  * characters become spaces. A line that starts with "---" is escaped: it could match the log markers
  * that the action cuts the pull request body at.
  */
@@ -152,8 +152,8 @@ const noteText = (s: string): string =>
       .trim(),
   );
 
-/** The body of the pull request that a cold start opens; locally, the text printed at the end. */
-export function renderInitReport(r: {
+/** The body of the pull request that a survey opens; locally, the text printed at the end. */
+export function renderSurveyReport(r: {
   written: string[];
   created: string[];
   /** Items still listed in docs/todo.md. */
@@ -172,7 +172,7 @@ export function renderInitReport(r: {
   const notes = noteText(r.notes);
   const checked = noteText(r.checked ?? "");
   return [
-    "## Spriggs: cold start report",
+    "## Spriggs: survey report",
     "",
     "I explored this repository, checked its docs against the code and filled the gaps I found. Review the pages like any other change: they are a draft from the code, not a record of intent.",
     "",
@@ -236,7 +236,7 @@ export function renderComment(
       : []),
     ...(noDocs
       ? [
-          "> **No docs yet:** this repository had no doc pages when I started, and a pull request run only covers one change. For a first set of docs for the whole repository, run the cold start: start the Spriggs workflow by hand from the Actions tab. The workflow needs `workflow_dispatch:` under `on:` for that.",
+          "> **No docs yet:** this repository had no doc pages when I started, and a pull request run only covers one change. For a first set of docs for the whole repository, run the survey: start the Spriggs workflow by hand from the Actions tab. The workflow needs `workflow_dispatch:` under `on:` for that.",
           "",
         ]
       : []),
@@ -277,7 +277,7 @@ function renderRun(run: RunReport): string[] {
       : []),
     ...(run.moreDebt
       ? [
-          "> **More docs debt:** more merged pull requests have unchecked docs than I check in one run. Run the cold start (Actions → spriggs → Run workflow) to check the docs of the whole repository.",
+          "> **More docs debt:** more merged pull requests have unchecked docs than I check in one run. Run the survey (Actions → spriggs → Run workflow) to check the docs of the whole repository.",
           "",
         ]
       : []),

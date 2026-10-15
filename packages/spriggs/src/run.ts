@@ -18,7 +18,7 @@ import { type Coverage, type RunReport, renderComment, statusLine } from "./repo
 
 export type RunOptions = { cwd?: string; model?: string };
 
-/** Merged pull requests with unchecked docs that one run catches up on. More than this is a job for the cold start. */
+/** Merged pull requests with unchecked docs that one run catches up on. More than this is a job for the survey. */
 const MAX_DEBT = 10;
 
 /** context -> skip rules -> stage one -> decide -> agent -> enforce -> entry -> commit -> report. */
@@ -55,7 +55,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
 
   const blocking = process.env.SPRIGGS_BLOCKING === "true" || s.breaking;
   const index = await docsIndex(cwd);
-  // No pages at all: the comment points to the cold start.
+  // No pages at all: the comment points to the survey.
   const noDocs = !index.some((d) => d.path.endsWith(".md"));
   const report = async (label: Label, status: [StatusState, string], runReport?: RunReport) => {
     await forge.upsertComment(
