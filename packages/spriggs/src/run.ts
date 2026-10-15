@@ -131,7 +131,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       rt,
       userMessage: message.text,
       inlineShown: message.inlineShown,
-      checks: [unreadFiles(message.notShown), deadLinks],
+      checks: [unreadFiles(message.notShown), deadLinks("run")],
       agent: docsAgent(verdict.tier),
     });
   } catch (e) {

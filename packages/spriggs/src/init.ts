@@ -51,7 +51,7 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
       agent: INIT_AGENT,
       provider,
       rt,
-      checks: [deadLinks],
+      checks: [deadLinks()],
       userMessage: buildInitMessage({
         name: config?.name,
         index,

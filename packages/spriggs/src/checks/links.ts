@@ -6,10 +6,11 @@ import type { HardCheck } from "./index";
 
 /**
  * Relative links in docs/ must point to a file that exists and, for a markdown page, to a heading on it.
- * Only links from or to a page the model wrote count: dead links people left are not this run's job.
- * Change entries are history and are not checked.
+ * Scope "run": only links from or to a page the model wrote, so a pull request is not filled with fixes
+ * to links it did not touch. Scope "all": every link, for the cold start, whose job is the whole doc set.
+ * Change entries (history) and docs/api/ (generated) cannot be edited by the model and are not checked.
  */
-export const deadLinks: HardCheck = {
+export const deadLinks = (scope: "run" | "all" = "all"): HardCheck => ({
   name: "dead links",
   advice:
     "These links in docs/ point to a file or a heading that does not exist. Fix the link, or the heading it points to.",
@@ -18,7 +19,11 @@ export const deadLinks: HardCheck = {
     const pages = readdirSync(join(rt.cwd, "docs"), { recursive: true, encoding: "utf8" })
       .map((p) => `docs/${p}`)
       .filter(
-        (p) => p.endsWith(".md") && !p.startsWith("docs/changes/") && readableFile(rt.cwd, p),
+        (p) =>
+          p.endsWith(".md") &&
+          !p.startsWith("docs/changes/") &&
+          !p.startsWith("docs/api/") &&
+          readableFile(rt.cwd, p),
       );
     const read = (p: string) => readFileSync(join(rt.cwd, p), "utf8");
     const anchorCache = new Map<string, Set<string>>();
@@ -37,7 +42,7 @@ export const deadLinks: HardCheck = {
         if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(href)) continue; // http:, mailto: and the like
         const [path = "", anchor] = href.split("#", 2);
         const target = path ? normalize(join(dirname(page), decode(path))) : page;
-        if (!rt.originals.has(page) && !rt.originals.has(target)) continue;
+        if (scope === "run" && !rt.originals.has(page) && !rt.originals.has(target)) continue;
         if (target.startsWith("..") || !existsSync(join(rt.cwd, target)))
           problems.push(`${page}: ${href} (no such file)`);
         else if (anchor && target.endsWith(".md") && !anchorsOf(target).has(anchor.toLowerCase()))
@@ -46,7 +51,7 @@ export const deadLinks: HardCheck = {
     }
     return problems;
   },
-};
+});
 
 /** Link targets in the text, outside code. */
 function links(text: string): string[] {
