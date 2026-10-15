@@ -2,6 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { DEFAULT_IDENTITY, type ForgeContext, type Identity } from "../context";
 import { changedFiles, commitInfo, commitMessages, git } from "../git";
 import {
+  type Debt,
   type Forge,
   LABELS,
   type Label,
@@ -144,19 +145,62 @@ export class GitHubForge implements Forge {
   }
 
   async setLabel(label: Label): Promise<void> {
+    await this.labelPr(this.ev.pull_request.number, label);
+  }
+
+  /** Sets one docs:* label on a pull request and removes the others. */
+  private async labelPr(issue_number: number, label: Label): Promise<void> {
+    const target = { ...this.target, issue_number };
     // The labels now, not the event payload's: a queued run's payload is older than the last run.
-    const { data } = await this.octokit.issues.listLabelsOnIssue({ ...this.target, per_page: 100 });
+    const { data } = await this.octokit.issues.listLabelsOnIssue({ ...target, per_page: 100 });
     const current = new Set(data.map((l) => l.name));
     for (const other of LABELS) {
       if (other !== label && current.has(other)) {
-        await this.octokit.issues.removeLabel({ ...this.target, name: other }).catch((e) => {
+        await this.octokit.issues.removeLabel({ ...target, name: other }).catch((e) => {
           if ((e as { status?: number }).status !== 404) throw e; // already gone
         });
       }
     }
     if (!current.has(label)) {
-      await this.octokit.issues.addLabels({ ...this.target, labels: [label] });
+      await this.octokit.issues.addLabels({ ...target, labels: [label] });
     }
+  }
+
+  async docsDebt(limit: number): Promise<Debt[]> {
+    const { owner, repo } = this.target;
+    // The 100 most recently updated closed pull requests on the base branch: older debt is for the cold start.
+    const { data } = await this.octokit.pulls.list({
+      owner,
+      repo,
+      state: "closed",
+      base: this.ev.pull_request.base.ref,
+      sort: "updated",
+      direction: "desc",
+      per_page: 100,
+    });
+    const open = data
+      .filter(
+        (p) =>
+          p.merged_at &&
+          p.number !== this.ev.pull_request.number &&
+          p.labels.some((l) => l.name === "docs:needs-input" || l.name === "docs:partial"),
+      )
+      .slice(0, limit);
+    return Promise.all(
+      open.map(async (p) => {
+        const files = await this.octokit.pulls.listFiles({
+          owner,
+          repo,
+          pull_number: p.number,
+          per_page: 100,
+        });
+        return { number: p.number, title: p.title, files: files.data.map((f) => f.filename) };
+      }),
+    );
+  }
+
+  async clearDebt(prs: number[]): Promise<void> {
+    for (const pr of prs) await this.labelPr(pr, "docs:done");
   }
 
   async setStatus(state: StatusState, description: string): Promise<void> {
