@@ -17,7 +17,7 @@ Run it on the `pull_request` event, never on `pull_request_target`. With `pull_r
 
 ## Inputs
 
-All inputs are optional. Each one is passed to Spriggs as an environment variable.
+All inputs are optional. Each one becomes an environment variable for the step that runs Spriggs, except `app-id` and `app-private-key`, which mint a token instead.
 
 | Input | Default | Becomes | Notes |
 | --- | --- | --- | --- |
@@ -40,7 +40,7 @@ Other settings, such as `SPRIGGS_CONTEXT_TOKENS`, `SPRIGGS_BLOCKING` or `SPRIGGS
 3. **Install Spriggs** in the action's own folder: `bun install --frozen-lockfile --production`.
 4. **Mint an App token**, only when `app-id` is set and the event is not a pull request from a fork (forks get no secrets). It uses `actions/create-github-app-token@v2`. The token replaces `github-token`, and the App's slug goes to Spriggs as `SPRIGGS_APP_SLUG`.
 5. **Run Spriggs.** The step picks the command, then runs `spriggs run` or `spriggs survey`. For `survey`, the output is also saved to a log file in the runner's temporary folder. Exit codes 0 and 3 let the job go on; any other code fails the step.
-6. **Open the docs pull request**, only for `survey`. It runs `scripts/open-survey-pr.sh`. See [cold-start.md](../spriggs/cold-start.md#in-ci).
+6. **Open the docs pull request**, only for `survey`. It runs `scripts/open-survey-pr.sh`. See [the survey](../spriggs/survey.md#in-ci).
 7. **Report an early stop**, only when `survey` exited with 3. It prints an error that points to `docs/todo.md` and fails the job, after the pull request was opened.
 
 ## Bun settings from the repository are ignored
