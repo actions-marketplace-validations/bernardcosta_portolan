@@ -1,5 +1,5 @@
 ---
-summary: The fixed layout of a project's docs/ folder, the frontmatter every page carries, the portolan.yml keys and the change entry format. Spriggs checks all of these before it commits.
+summary: The fixed layout of a project's docs/ folder, the frontmatter every page carries, the portolan.yml keys, the change entry format and the rule that links between pages must work. Spriggs checks all of these before it commits.
 covers:
   - packages/spriggs/src/docs/frontmatter.ts
   - packages/spriggs/src/docs/portolan.ts
@@ -8,6 +8,7 @@ covers:
   - packages/spriggs/src/enforce.ts
   - packages/spriggs/src/agent/tools.ts
   - packages/spriggs/src/agent/prompt.ts
+  - packages/spriggs/src/checks/links.ts
 ---
 
 # The docs contract
@@ -52,6 +53,14 @@ Do not put dates, authors or commits in frontmatter.
 ### How covers is used
 
 Before a pull request run, Spriggs lists every tracked file under `docs/` except change entries. A page is marked as affected when one of its `covers` paths matches a changed file. A match is either the same path or a folder prefix of it. A trailing `/` or `/*` (or `/**`) on a cover is ignored, so `src/gate`, `src/gate/` and `src/gate/**` all match `src/gate/decide.ts`. The model gets the affected pages as a starting point. No model call is made to decide this.
+
+## Links
+
+Links between pages must work. When a heading is renamed or renumbered, or a page is moved or renamed, every link to the old anchor or path is found and fixed.
+
+A relative link in a page under `docs/` must point to a file that exists and, when it points at a markdown page, to a heading on that page. The anchors are the ones GitHub gives a page: one per heading, lower case, punctuation removed, spaces turned into hyphens, with `-1`, `-2` and so on when a heading repeats, plus any `<a id>` or `<a name>`. Change entries, fenced code, inline code, HTML comments and links with a scheme (`http:`, `mailto:`) are skipped. A relative link that leaves the repository is reported.
+
+This is a check on the model, not on you. It runs when the model calls `finish`, and only for links from or to a page that run wrote, so a dead link people left elsewhere in the repository does not get in the model's way. The first `finish` with a dead link is refused with the list of them; a second `finish` is accepted as it is. See [Hard checks](../spriggs/agent-harness.md#hard-checks).
 
 ## portolan.yml
 
