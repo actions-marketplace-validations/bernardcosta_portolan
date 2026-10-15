@@ -20,7 +20,7 @@ export function docsAgent(tier: "small" | "large"): Agent {
   return {
     name: "docs",
     system: SYSTEM_PROMPT,
-    tools: ["list_files", "read_file", "read_diff", "write_doc", "finish"],
+    tools: ["list_files", "search", "read_file", "read_diff", "write_doc", "finish"],
     budget:
       tier === "large"
         ? { maxTurns: 40, maxTokens: 1_500_000, timeoutMs: 15 * 60 * 1000 }
