@@ -4,6 +4,8 @@ import { resolveProvider } from "./agent/model";
 import { buildUserMessage } from "./agent/prompt";
 import { ContextWindowError, type Provider, type Usage } from "./agent/providers/types";
 import { createRuntime, revertWrites } from "./agent/tools";
+import { deadLinks } from "./checks/links";
+import { unreadFiles } from "./checks/unread";
 import { loadPortolanConfig } from "./docs/portolan";
 import { affectedDocs, docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
@@ -129,7 +131,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       rt,
       userMessage: message.text,
       inlineShown: message.inlineShown,
-      mustRead: message.notShown,
+      checks: [unreadFiles(message.notShown), deadLinks],
       agent: docsAgent(verdict.tier),
     });
   } catch (e) {

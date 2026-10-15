@@ -9,6 +9,7 @@ covers:
   - packages/spriggs/src/agent/prompt.ts
   - packages/spriggs/src/agent/init-prompt.ts
   - packages/spriggs/src/agent/providers/
+  - packages/spriggs/src/checks/
   - packages/spriggs/src/init.ts
 ---
 
@@ -34,10 +35,19 @@ The console log shows each turn: the turn number and the model's text, then one 
 - **Wrap-up.** For an agent with a wrap-up message, once 80% of turns, tokens or time is spent, the message is sent once as a user turn, and the console logs `budget: nearly spent; told the model to wrap up`.
 - **Output limit.** One reply may be up to 32,000 tokens. A reply cut at the limit has its tool calls refused with advice to write a shorter file or split it, and the console logs `reply cut at the output limit; asked for a shorter one`. A second cut reply ends the run.
 - **No tool call.** If the model stops without calling a tool and has not finished, it is told once to call `finish`. A second time ends the run.
-- **Must-read files.** Changed files whose diff was not inline must be seen before `finish`. The first `finish` with unread files is refused and lists them; the second is accepted.
+- **Hard checks.** A tool call for `finish` that succeeds is held while the run's checks are run over the docs (see [Hard checks](#hard-checks)). The first `finish` with problems is refused and its result thrown away; a second `finish` is accepted as it is.
 - **Seen files.** A file counts as seen when its diff was inline, or a `read_diff` or `read_file` call on it succeeded and was not cut.
 - **Context clearing.** When one request goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window; about 120,000 suits a 200K-token window), tool results older than the last three tool turns are replaced with a short note. Call IDs and order stay, so the model can call the tool again. The console logs `context: cleared N older tool result(s)`.
 - A call to a tool the agent does not have is refused.
+
+## Hard checks
+
+Some of the docs contract can be proved by code, with no model. Those checks live in `checks/`, one file each. A **hard check** has a `name` for the log, `advice` shown to the model, and a `run(state)` that returns one line per problem, or nothing when the docs pass. `runHardChecks` runs the checks in order and builds one message: `Not yet. Fix these, then call finish again.`, then the advice and the problem lines of each failed check. The console logs the check name and the number of problems, not the lines themselves. `runAgent` takes the checks as `checks`; a run with no checks refuses nothing.
+
+- **Changed files not read** (`checks/unread.ts`): changed files whose diff was not inline and that the model has not read. It must read them with `read_diff` or `read_file`. Seen works as in the loop rule above.
+- **Dead links** (`checks/links.ts`): relative links in pages under `docs/` that point to a file that does not exist or, for a markdown page, to a heading it does not have. The anchors are the ones GitHub gives a page: one per heading, lower case, punctuation removed, spaces turned into hyphens, with `-1`, `-2` and so on when a heading repeats, plus any `<a id>` or `<a name>`. Skipped: change entries, fenced code, inline code, HTML comments, and links with a scheme such as `http:` or `mailto:`. Only a link from a page this run wrote, or to a page this run wrote, counts, so a dead link people left elsewhere does not block the model. A relative link that leaves the repository is reported as a missing file.
+
+Which run uses which check: a pull request run uses both; `spriggs init` uses the link check; the `verify` check pass inside `init.ts` uses none, because it may only correct pages that already exist.
 
 ## The tool pool
 
@@ -63,7 +73,7 @@ Both clients use a five-minute request timeout. To add a provider, implement the
 
 ## Prompts
 
-`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. The pull request prompt has an "Old facts" rule: when a change renames, removes or changes something a reader relies on, the model searches `docs/` in several wordings for pages that still state the old fact and fixes them, even when their `covers` do not match the diff (see [pull-request-run.md](pull-request-run.md#5-agent-run)). `agent/init-prompt.ts` holds the cold-start prompt and builds its first message from the project name, the existing docs with summaries, the body of `docs/todo.md` from the last run (first 20,000 characters), and a file outline. `init.ts` builds that outline from the runtime's readable set (tracked files plus untracked files git does not ignore): up to 40 root files, then folders two levels deep with file counts, capped at 300 lines, or `(no files)` when there are none. The todo page path is `docs/todo.md`; after the run, `init.ts` counts its list items (lines starting with `-`, `*`, `+`, `1.` or `1)`) and removes it when there are none and the model wrote it in this run. The todo is read with the same check as `read_file` (`readableFile`), so a symlink is ignored.
+`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. The contract text asks the model to search `docs/` for links to a heading or page it renames or moves and to fix them: the rule the link check enforces. The pull request prompt has an "Old facts" rule: when a change renames, removes or changes something a reader relies on, the model searches `docs/` in several wordings for pages that still state the old fact and fixes them, even when their `covers` do not match the diff (see [pull-request-run.md](pull-request-run.md#6-agent-run)). `agent/init-prompt.ts` holds the cold-start prompt and builds its first message from the project name, the existing docs with summaries, the body of `docs/todo.md` from the last run (first 20,000 characters), and a file outline. `init.ts` builds that outline from the runtime's readable set (tracked files plus untracked files git does not ignore): up to 40 root files, then folders two levels deep with file counts, capped at 300 lines, or `(no files)` when there are none. The todo page path is `docs/todo.md`; after the run, `init.ts` counts its list items (lines starting with `-`, `*`, `+`, `1.` or `1)`) and removes it when there are none and the model wrote it in this run. The todo is read with the same check as `read_file` (`readableFile`), so a symlink is ignored.
 
 ## Init exit codes
 

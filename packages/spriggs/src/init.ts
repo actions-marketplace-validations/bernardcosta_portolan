@@ -6,6 +6,7 @@ import { AgentError, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import type { Provider, Usage } from "./agent/providers/types";
 import { createRuntime, readableFile, type ToolRuntime } from "./agent/tools";
+import { deadLinks } from "./checks/links";
 import { splitFrontmatter } from "./docs/frontmatter";
 import { loadPortolanConfig } from "./docs/portolan";
 import { docsIndex } from "./docs/tree";
@@ -50,6 +51,7 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
       agent: INIT_AGENT,
       provider,
       rt,
+      checks: [deadLinks],
       userMessage: buildInitMessage({
         name: config?.name,
         index,
