@@ -119,7 +119,7 @@ After the model finishes, Spriggs checks every file it wrote. A file written bac
 - a written file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
 - a markdown page has missing or invalid frontmatter;
 - `docs/portolan.yml` breaks the rules above;
-- the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs init` has no cap);
+- the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs survey` has no cap);
 - in CI, on a pull request run, any other file in the working tree changed.
 
-On a pull request run, a failed check fails the run and every write is undone. On `spriggs init`, the files are left in place for you to review and init exits with code 1.
+On a pull request run, a failed check fails the run and every write is undone. On `spriggs survey`, the files are left in place for you to review, and the survey exits with code 1.
