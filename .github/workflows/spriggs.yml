@@ -32,6 +32,7 @@ jobs:
       - uses: ./
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
           # provider/model. Leave empty to use anthropic/claude-opus-5-5 when the Anthropic key is set.
           model: ${{ vars.SPRIGGS_MODEL }}
           # Optional GitHub App. Without it Spriggs uses the workflow's own token.
