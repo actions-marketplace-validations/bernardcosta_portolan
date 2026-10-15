@@ -109,6 +109,19 @@ export const quiet = (s: string): string =>
     )
     .join("");
 
+/**
+ * A model note for the init report. Keeps the line breaks: the note is often a list. Other control
+ * characters become spaces. A line that starts with "---" is escaped: it could match the log markers
+ * that the action cuts the pull request body at.
+ */
+const noteText = (s: string): string =>
+  quiet(
+    s
+      .replace(/[^\P{Cc}\n]/gu, " ")
+      .replace(/^---/gm, "\\---")
+      .trim(),
+  );
+
 /** The body of the pull request that a cold start opens; locally, the text printed at the end. */
 export function renderInitReport(r: {
   written: string[];
@@ -118,13 +131,16 @@ export function renderInitReport(r: {
   /** The run cleared and removed a todo left by an earlier run. */
   removedTodo: boolean;
   notes: string;
+  /** The check pass's corrections, one per line. */
+  checked?: string;
   /** Why the run stopped before `finish`, when it did. */
   stopped: string | undefined;
   usage: Usage | undefined;
   model: string;
   turns: number | undefined;
 }): string {
-  const notes = quiet(flat(r.notes));
+  const notes = noteText(r.notes);
+  const checked = noteText(r.checked ?? "");
   return [
     "## Spriggs: cold start report",
     "",
@@ -146,6 +162,7 @@ export function renderInitReport(r: {
         : ["", "I wrote and checked every page I planned."]),
     ...(r.removedTodo ? ["", "I removed `docs/todo.md`: nothing is left."] : []),
     ...(notes ? ["", `A note from the run: ${notes}`] : []),
+    ...(checked ? ["", `**Checked against the code after writing:**`, "", checked] : []),
     ...(r.usage ? ["", usageLine(r.usage, r.model, r.turns)] : []),
   ].join("\n");
 }

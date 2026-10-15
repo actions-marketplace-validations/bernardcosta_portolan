@@ -1,4 +1,4 @@
-import { INIT_SYSTEM_PROMPT } from "./init-prompt";
+import { INIT_SYSTEM_PROMPT, VERIFY_SYSTEM_PROMPT } from "./init-prompt";
 import { SYSTEM_PROMPT } from "./prompt";
 import type { ToolName } from "./tools";
 
@@ -43,4 +43,14 @@ export const INIT_AGENT: Agent = {
   },
   nearBudget:
     "Most of the budget is spent. Stop exploring now. Rewrite docs/todo.md so it lists exactly the pages you did not write or did not fully check, then call finish.",
+};
+
+/** The check pass after a cold start. A fresh context; it corrects only claims the code does not support. */
+export const VERIFY_AGENT: Agent = {
+  name: "verify",
+  system: VERIFY_SYSTEM_PROMPT,
+  tools: ["list_files", "search", "read_file", "write_doc", "finish"],
+  budget: { maxTurns: 60, maxTokens: 1_000_000, timeoutMs: 20 * 60 * 1000 },
+  nearBudget:
+    "Most of the budget is spent. Write the corrections you have evidence for now, then call finish and name the pages you did not fully check.",
 };

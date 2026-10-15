@@ -19,6 +19,12 @@ export const DOCS_CONTRACT = `The docs/ contract:
 - Any other folder under docs/ is free: guides, decisions, runbooks, reference. At most two levels deep.
 - Every markdown file starts with frontmatter: summary (required, one or two sentences for a person), audience: agent (only for detail-grade docs), covers (optional list of code paths the doc rests on). No dates, authors or commits in frontmatter.`;
 
+/** Where a claim's evidence comes from. The common sources of wrong claims, from the argos cold start review. */
+export const CODE_THAT_RUNS = `- Describe what the code does when it runs, not what names, comments or types suggest. Follow a call to the code that runs.
+- Before you write that something always happens or holds for every case (every provider, event, role or platform), check each branch. If it holds only in some cases, name them.
+- A component, function or setting that is defined is not in use until you find where it is used.
+- Do not fill a gap with how a tool or framework usually works. Check this repository's configuration.`;
+
 /** How every agent writes, docs included. */
 export const STYLE =
   "Style for everything you write, docs included: write as a colleague would, in plain words. Short sentences. Everyday verbs. No abbreviations or jargon the reader may not know, and no marketing tone.";
