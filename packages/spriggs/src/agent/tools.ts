@@ -9,7 +9,15 @@ import type { ToolDef } from "./providers/types";
 // The tool pool is the security boundary. The model has nothing else: no shell, no network.
 // Each agent takes a subset of the pool (see agents.ts).
 
-export type ToolName = "list_files" | "search" | "read_file" | "read_diff" | "write_doc" | "finish";
+export type ToolName =
+  | "list_files"
+  | "search"
+  | "read_file"
+  | "read_diff"
+  | "write_doc"
+  | "move_doc"
+  | "delete_doc"
+  | "finish";
 
 const READ_CAP = 64_000;
 const SEARCH_CAP_LINES = 200;
@@ -31,7 +39,7 @@ export type ToolRuntime = {
   readable: Set<string>;
   /** The diff of this run, split per changed file. */
   diffs: Map<string, string>;
-  /** Files the model wrote this run, with their content before the first write (null = did not exist). */
+  /** Files the model wrote, moved or deleted this run, with their content before the first change (null = did not exist). */
   originals: Map<string, string | null>;
   /** When set, write_doc accepts only these paths (a checker corrects its own pages). */
   writable?: Set<string> | undefined;
@@ -130,6 +138,40 @@ export const TOOL_DEFS: ToolDef[] = [
         content: { type: "string", description: "The complete new file content" },
       },
       required: ["path", "content"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "move_doc",
+    description:
+      "Move or rename one page under docs/. The content stays the same; to change it too, move first, then write_doc. " +
+      "Then search docs/ for links to the old path and fix them. Not allowed: docs/api/, docs/changes/, and the required " +
+      "pages docs/overview.md, docs/setup.md and docs/portolan.yml.",
+    schema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "The page's path now, under docs/" },
+        to: {
+          type: "string",
+          description: "The new path under docs/; nothing may exist there yet",
+        },
+      },
+      required: ["from", "to"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_doc",
+    description:
+      "Delete one page under docs/, when its whole subject is gone from the code or another page already says all of it. " +
+      "Then search docs/ for links to it and fix them, and name the deletion in your finish notes. Not allowed: " +
+      "docs/api/, docs/changes/, and the required pages docs/overview.md, docs/setup.md and docs/portolan.yml.",
+    schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The page's path under docs/" },
+      },
+      required: ["path"],
       additionalProperties: false,
     },
   },
@@ -312,6 +354,10 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
     }
     case "write_doc":
       return writeDoc(rt, field(input, "path"), field(input, "content"));
+    case "move_doc":
+      return moveDoc(rt, field(input, "from"), field(input, "to"));
+    case "delete_doc":
+      return deleteDoc(rt, field(input, "path"));
     case "finish": {
       const r = input as Partial<FinishResult>;
       if (typeof r.title !== "string" || !r.title.trim() || typeof r.body !== "string") {
@@ -332,33 +378,92 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
   }
 }
 
+/** Why the model may not change this path, or undefined when it may. Shared by every tool that changes docs/. */
+function docsPathError(rt: ToolRuntime, path: string | undefined): string | undefined {
+  if (!path?.startsWith("docs/")) return "path must be under docs/";
+  if (rt.writable && !rt.writable.has(path)) return "you may only correct the pages in the message";
+  if (path.startsWith("docs/api/")) return "docs/api/ is generated from the build; do not edit it";
+  if (path.startsWith("docs/changes/"))
+    return "Spriggs writes the change entry itself; do not write under docs/changes/";
+  if (!/\.(md|yml|html)$/.test(path)) return "only .md, .yml and .html files are allowed";
+  if (path.split("/").length > 4) return "docs/ folders go at most two levels deep";
+  if (!insideDocs(rt.cwd, path)) return "path resolves outside docs/";
+  return undefined;
+}
+
+/** The docs spine: a run may edit these pages, never move or delete them. */
+const REQUIRED = new Set(["docs/overview.md", "docs/setup.md", "docs/portolan.yml"]);
+
+/** Records a path's content before its first change this run, so a failed run can put it back. */
+async function remember(rt: ToolRuntime, path: string): Promise<void> {
+  const abs = join(rt.cwd, path);
+  if (!rt.originals.has(path))
+    rt.originals.set(path, existsSync(abs) ? await Bun.file(abs).text() : null);
+}
+
+/** Errors for content that may not go to this path. */
+function contentErrors(path: string, content: string): string[] {
+  if (path.endsWith(".md")) return validateDoc(content);
+  if (path === "docs/portolan.yml") return parsePortolanYml(content).errors;
+  return [];
+}
+
 async function writeDoc(rt: ToolRuntime, rawPath: unknown, content: unknown): Promise<ToolResult> {
   const path = safeRel(rawPath);
-  if (!path?.startsWith("docs/")) return err("path must be under docs/");
-  if (rt.writable && !rt.writable.has(path))
-    return err("you may only correct the pages in the message");
-  if (path.startsWith("docs/api/"))
-    return err("docs/api/ is generated from the build; do not edit it");
-  if (path.startsWith("docs/changes/"))
-    return err("Spriggs writes the change entry itself; do not write under docs/changes/");
-  if (!/\.(md|yml|html)$/.test(path)) return err("only .md, .yml and .html files are allowed");
-  if (path.split("/").length > 4) return err("docs/ folders go at most two levels deep");
+  const bad = docsPathError(rt, path);
+  if (bad || !path) return err(bad ?? "invalid path");
   if (typeof content !== "string") return err("content must be a string");
   if (content.length > WRITE_CAP) return err(`content is over ${WRITE_CAP} characters`);
-  if (!insideDocs(rt.cwd, path)) return err("path resolves outside docs/");
-  if (path.endsWith(".md")) {
-    const errors = validateDoc(content);
-    if (errors.length) return err(errors.join("; "));
-  }
-  if (path === "docs/portolan.yml") {
-    const { errors } = parsePortolanYml(content);
-    if (errors.length) return err(errors.join("; "));
-  }
+  const errors = contentErrors(path, content);
+  if (errors.length) return err(errors.join("; "));
+  await remember(rt, path);
   const abs = join(rt.cwd, path);
-  if (!rt.originals.has(path)) {
-    rt.originals.set(path, existsSync(abs) ? await Bun.file(abs).text() : null);
-  }
   mkdirSync(dirname(abs), { recursive: true });
   await Bun.write(abs, content);
   return ok(`wrote ${path}`);
+}
+
+/** An existing regular file under docs/ that the model may move or delete. */
+function existingPage(rt: ToolRuntime, path: string | undefined): string | undefined {
+  const bad = docsPathError(rt, path);
+  if (bad || !path) return bad ?? "invalid path";
+  if (REQUIRED.has(path)) return `${path} is a required page; edit it in place`;
+  if (!existsSync(join(rt.cwd, path)) || !readableFile(rt.cwd, path))
+    return `${path} does not exist`;
+  return undefined;
+}
+
+async function moveDoc(rt: ToolRuntime, rawFrom: unknown, rawTo: unknown): Promise<ToolResult> {
+  const from = safeRel(rawFrom);
+  const to = safeRel(rawTo);
+  const badFrom = existingPage(rt, from);
+  if (badFrom || !from) return err(badFrom ?? "invalid path");
+  const badTo = docsPathError(rt, to);
+  if (badTo || !to) return err(badTo ?? "invalid path");
+  if (REQUIRED.has(to)) return err(`${to} is a required page; edit it in place`);
+  if (existsSync(join(rt.cwd, to))) return err(`${to} already exists`);
+  const content = await Bun.file(join(rt.cwd, from)).text();
+  const errors = contentErrors(to, content);
+  if (errors.length)
+    return err(
+      `the page cannot go to ${to} as it is: ${errors.join("; ")}. Write it there with write_doc.`,
+    );
+  await remember(rt, from);
+  await remember(rt, to);
+  mkdirSync(dirname(join(rt.cwd, to)), { recursive: true });
+  await Bun.write(join(rt.cwd, to), content);
+  rmSync(join(rt.cwd, from));
+  rt.readable.delete(from);
+  rt.readable.add(to);
+  return ok(`moved ${from} to ${to}`);
+}
+
+async function deleteDoc(rt: ToolRuntime, rawPath: unknown): Promise<ToolResult> {
+  const path = safeRel(rawPath);
+  const bad = existingPage(rt, path);
+  if (bad || !path) return err(bad ?? "invalid path");
+  await remember(rt, path);
+  rmSync(join(rt.cwd, path));
+  rt.readable.delete(path);
+  return ok(`deleted ${path}`);
 }

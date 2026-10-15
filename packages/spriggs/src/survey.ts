@@ -97,6 +97,7 @@ export async function survey(opts: { cwd?: string; model?: string } = {}): Promi
   const report = renderSurveyReport({
     written,
     created: check.created,
+    deleted: check.deleted,
     left,
     removedTodo,
     notes,

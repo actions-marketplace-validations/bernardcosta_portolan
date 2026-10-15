@@ -20,7 +20,16 @@ export function docsAgent(tier: "small" | "large"): Agent {
   return {
     name: "docs",
     system: SYSTEM_PROMPT,
-    tools: ["list_files", "search", "read_file", "read_diff", "write_doc", "finish"],
+    tools: [
+      "list_files",
+      "search",
+      "read_file",
+      "read_diff",
+      "write_doc",
+      "move_doc",
+      "delete_doc",
+      "finish",
+    ],
     budget:
       tier === "large"
         ? { maxTurns: 40, maxTokens: 1_500_000, timeoutMs: 15 * 60 * 1000 }
@@ -35,7 +44,7 @@ export function docsAgent(tier: "small" | "large"): Agent {
 export const SURVEY_AGENT: Agent = {
   name: "survey",
   system: SURVEY_SYSTEM_PROMPT,
-  tools: ["list_files", "search", "read_file", "write_doc", "finish"],
+  tools: ["list_files", "search", "read_file", "write_doc", "move_doc", "delete_doc", "finish"],
   budget: {
     maxTurns: 120,
     maxTokens: Number(process.env.SPRIGGS_SURVEY_TOKENS) || 2_000_000,
