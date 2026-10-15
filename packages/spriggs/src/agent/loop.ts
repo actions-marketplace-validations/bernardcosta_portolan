@@ -1,3 +1,4 @@
+import { type HardCheck, runHardChecks } from "../checks";
 import { flat } from "../report";
 import type { Agent } from "./agents";
 import type { Provider, Turn, Usage } from "./providers/types";
@@ -44,8 +45,8 @@ export async function runAgent(opts: {
   userMessage: string;
   /** Changed files whose diff is inline in the message. */
   inlineShown?: string[];
-  /** Changed files the model must read before `finish` (not inline). The loop reminds it once. */
-  mustRead?: string[];
+  /** Run when the model calls `finish`. The first finish with problems is refused; a second one is accepted. */
+  checks?: HardCheck[];
 }): Promise<AgentResult> {
   const { agent, rt } = opts;
   const { budget } = agent;
@@ -56,7 +57,7 @@ export async function runAgent(opts: {
   const turns: Turn[] = [{ role: "user", text: opts.userMessage }];
   const seen = new Set(opts.inlineShown ?? []);
   let nudged = false;
-  let reminded = false;
+  let refused = false;
   let cutOnce = false;
   let warned = false;
 
@@ -136,17 +137,13 @@ export async function runAgent(opts: {
         (call.name === "read_diff" || call.name === "read_file")
       )
         seen.add(path);
-      // Files not shown inline must be read before finishing. One reminder; the second finish is accepted.
-      if (call.name === "finish" && !r.isError && !reminded) {
-        const missed = (opts.mustRead ?? []).filter((p) => !seen.has(p));
-        if (missed.length) {
-          reminded = true;
+      // The hard checks. One refusal; the second finish is accepted.
+      if (call.name === "finish" && !r.isError && !refused) {
+        const problems = runHardChecks(opts.checks ?? [], { rt, seen });
+        if (problems) {
+          refused = true;
           rt.finished = undefined;
-          r = {
-            isError: true,
-            content: `Not yet. These changed files were not shown and you have not read them; read them (read_diff or read_file), then call finish again:\n${missed.map((p) => `- ${p}`).join("\n")}`,
-          };
-          console.log(`  finish: ${missed.length} changed file(s) not read yet`);
+          r = { isError: true, content: problems };
         }
       }
       const line = describe(allowed.has(call.name) ? call.name : "unavailable tool", call.input);
