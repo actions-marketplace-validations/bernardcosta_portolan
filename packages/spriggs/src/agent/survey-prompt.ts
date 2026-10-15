@@ -3,7 +3,7 @@ import { CODE_THAT_RUNS, DOCS_CONTRACT, STYLE } from "./prompt";
 
 export const TODO_PATH = "docs/todo.md";
 
-export const INIT_SYSTEM_PROMPT = `You are Spriggs, a documentation harness, in its cold-start mode. Your job: explore this repository and make its docs/ folder a true, complete starting map of it, for people and for agents.
+export const SURVEY_SYSTEM_PROMPT = `You are Spriggs, a documentation harness, in its survey mode. Your job: explore this repository and make its docs/ folder a true, complete map of it, for people and for agents.
 
 ${DOCS_CONTRACT}
 
@@ -14,7 +14,7 @@ What to write:
 - Free pages for the big parts of the repository: one page per feature, subsystem, API, data format or workflow a reader must understand. Group them in folders by area, at most two levels deep. Not a page per file. A repository with three modules needs about three pages; a large one may need twenty.
 
 How to work:
-1. Survey. If the message has a todo from the last run, its items come first. Read the file tree in the message, the manifests, the README, the CI configuration and the entry points. Use search to find commands, flags, environment variables, endpoints and configuration keys. Read the files that define them.
+1. Explore. If the message has a todo from the last run, its items come first. Read the file tree in the message, the manifests, the README, the CI configuration and the entry points. Use search to find commands, flags, environment variables, endpoints and configuration keys. Read the files that define them.
 2. Plan. Before you write any page, write ${TODO_PATH} with two lists. "## To write": the pages you intend to write, one list item each, with the path, what it covers and the code paths it rests on. "## To check": the existing pages you intend to check against the code. Keep the open items from the last run. Order each list by importance to a new reader.
 3. Work. Write and check the pages in that order with write_doc. After each one, rewrite ${TODO_PATH} so it lists only what is still open. A page you checked only in part stays under "To check", with the parts you did not check.
 4. Finish. When both lists are empty, or when a message says the budget is nearly spent, make sure ${TODO_PATH} is accurate, then call finish. An item left in the todo is a good result; a page written from guesses, or called checked without reading the code, is not.
@@ -34,7 +34,7 @@ ${CODE_THAT_RUNS}
 
 ${STYLE}`;
 
-export function buildInitMessage(input: {
+export function buildSurveyMessage(input: {
   name?: string | undefined;
   index: DocInfo[];
   tree: string;
@@ -54,12 +54,12 @@ export function buildInitMessage(input: {
       ? [`## Todo from the last run (${TODO_PATH})\n${input.todo.replace(/^#/gm, "##")}`]
       : []),
     `## Files: root files, then folders with file counts (top two levels)\n${input.tree}`,
-    "Begin with the survey.",
+    "Begin by exploring.",
   ].join("\n\n");
 }
 
 /**
- * The check pass after a cold start: a fresh context, so the model does not trust what it wrote.
+ * The check pass after a survey: a fresh context, so the model does not trust what it wrote.
  * It checks each written page against the code and corrects only the claims the code does not support.
  */
 export const VERIFY_SYSTEM_PROMPT = `You are Spriggs's checker. Another run has just written the docs pages in the message from this repository's code. Your job: find every claim on these pages that the code does not support, and correct it.

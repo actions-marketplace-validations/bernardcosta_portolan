@@ -2,17 +2,17 @@
 import { parseArgs } from "node:util";
 import { GitHubForge } from "./forge/github";
 import { LocalForge } from "./forge/local";
-import { init } from "./init";
 import { run } from "./run";
+import { survey } from "./survey";
 
 const USAGE = `Usage:
   portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]
-  portolan spriggs init [--model <provider/model>]`;
+  portolan spriggs survey [--model <provider/model>]`;
 
 async function main(argv: string[]): Promise<number> {
   // `portolan spriggs run ...` from the bin, `bun run spriggs run ...` from the root script.
   const [command, ...rest] = argv[0] === "spriggs" ? argv.slice(1) : argv;
-  if (command !== "run" && command !== "init") {
+  if (command !== "run" && command !== "survey") {
     console.error(USAGE);
     return 2;
   }
@@ -26,7 +26,7 @@ async function main(argv: string[]): Promise<number> {
     },
   });
   const model = values.model ? { model: values.model } : {};
-  if (command === "init") return init(model);
+  if (command === "survey") return survey(model);
   if (values.local && !values.base) {
     console.error("--local needs --base <ref>");
     return 2;

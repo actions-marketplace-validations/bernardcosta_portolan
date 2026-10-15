@@ -19,7 +19,7 @@ Spriggs reads its settings from command-line flags and environment variables. It
 
 ```
 portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]
-portolan spriggs init [--model <provider/model>]
+portolan spriggs survey [--model <provider/model>]
 ```
 
 From the repository root, `bun run spriggs ...` runs the same CLI (`packages/spriggs/src/cli.ts`). The leading word `spriggs` is optional.
@@ -44,7 +44,7 @@ An unknown command prints the usage and exits with code 2. An unexpected error p
 | `SPRIGGS_MAX_LINES` | 5000 | `gate/decide.ts` | Changed lines above which a pull request run writes nothing and asks to split the change. |
 | `SPRIGGS_BLOCKING` | not set | `run.ts` | When `true`, a gate stop sets the `spriggs` status to `failure`. Breaking changes do that anyway. |
 | `SPRIGGS_CONTEXT_TOKENS` | 600000 | `agent/loop.ts` | Input tokens per request above which older tool results are cleared. About 120000 suits a 200K-token model. |
-| `SPRIGGS_INIT_TOKENS` | 2000000 | `agent/agents.ts` | Token cap of the `init` agent. |
+| `SPRIGGS_SURVEY_TOKENS` | 2000000 | `agent/agents.ts` | Token cap of the `survey` agent. |
 | `GITHUB_TOKEN` | none | `forge/github.ts` | Required for `run` without `--local`. Used for the comment, label, status and push. |
 | `GITHUB_EVENT_PATH` | set by GitHub Actions | `forge/github.ts` | Required for `run` without `--local`. Must point to a `pull_request` event. |
 | `SPRIGGS_APP_SLUG` | not set | `forge/github.ts` | Set by the action when it runs as a GitHub App. Spriggs then commits and comments as `<slug>[bot]`. |

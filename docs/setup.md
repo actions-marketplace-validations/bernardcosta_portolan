@@ -10,7 +10,7 @@ covers:
   - .github/workflows/spriggs.yml
   - .env.example
   - action.yml
-  - scripts/open-init-pr.sh
+  - scripts/open-survey-pr.sh
   - scripts/bunfig.toml
 ---
 
@@ -36,13 +36,13 @@ covers:
 | `bun run typecheck` | Typecheck (`tsc --noEmit -p packages/spriggs`) |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
-| `bun run spriggs init` | Check the docs of the whole repository against the code and fill the gaps (see [Cold start](#cold-start-spriggs-init)) |
+| `bun run spriggs survey` | Check the docs of the whole repository against the code and fill the gaps (see [Survey](#survey-spriggs-survey)) |
 
 Full usage:
 
 ```
 portolan spriggs run [--local --base <ref> [--reason <text>]] [--model <provider/model>]
-portolan spriggs init [--model <provider/model>]
+portolan spriggs survey [--model <provider/model>]
 ```
 
 - `--reason <text>` (local only) takes the place of the pull request description's **Why** section, so the gate can pass without GitHub. Without it, a local run has no description.
@@ -56,13 +56,13 @@ In `--local` mode the diff is the working copy (uncommitted and untracked files 
 
 What each step of a run does is in [A pull request run](spriggs/pull-request-run.md).
 
-## Cold start: spriggs init
+## Survey: spriggs survey
 
-A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs init` from the repository root. A separate agent explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. It leaves a `docs/todo.md` listing what it did not write or check, and the next run starts with that list. Locally nothing is committed: review the result, then commit it and open a pull request yourself. The run prints a report between the lines `--- init result ---` and `--- end ---`, and exits with 0 (done), 1 (the post-run check failed) or 3 (stopped early; the pages so far stay).
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs survey` from the repository root. A separate agent explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. It leaves a `docs/todo.md` listing what it did not write or check, and the next run starts with that list. Locally nothing is committed: review the result, then commit it and open a pull request yourself. The run prints a report between the lines `--- survey result ---` and `--- end ---`, and exits with 0 (done), 1 (the post-run check failed) or 3 (stopped early; the pages so far stay).
 
-You can also start it from the GitHub Action, which opens the pull request for you. Add `workflow_dispatch:` under `on:` in your Spriggs workflow, then open **Actions → spriggs → Run workflow**.
+You can also run it from the GitHub Action, which opens the pull request for you. Add `workflow_dispatch:` under `on:` in your Spriggs workflow, then open **Actions → spriggs → Run workflow**.
 
-The steps, the report, the exit codes and the pull request the action opens are in [The cold start](spriggs/cold-start.md).
+The steps, the report, the exit codes and the pull request the action opens are in [The survey](spriggs/cold-start.md).
 
 ## Model
 
@@ -87,7 +87,7 @@ on:
     types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 concurrency:
-  group: spriggs-${{ github.event.pull_request.number || 'init' }}
+  group: spriggs-${{ github.event.pull_request.number || 'survey' }}
   cancel-in-progress: false
 permissions:
   contents: write
@@ -104,7 +104,7 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-The `workflow_dispatch:` line lets you start the [cold start](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one cold start at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
+The `workflow_dispatch:` line lets you run the [survey](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
 
 The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
 
@@ -117,7 +117,7 @@ Any provider from the [Model](#model) section works. The default is a convenienc
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. While the repository has no doc pages, the sticky comment of each pull request run points to the cold start. For a fuller first set of docs, run [`spriggs init`](#cold-start-spriggs-init) first, locally or from the action.
+No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. While the repository has no doc pages, the sticky comment of each pull request run points to the survey. For a fuller first set of docs, run [`spriggs survey`](#survey-spriggs-survey) first, locally or from the action.
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
 
@@ -128,7 +128,7 @@ While this repository is private, other repositories can use the action only whe
 This repository has two workflows:
 
 - `ci.yml` runs `bun run check` and `bun run typecheck` on pull requests and on pushes to `main`.
-- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the cold start, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes: it is skipped when the actor is `github-actions[bot]` or the App's bot, and the harness checks again.
+- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes: it is skipped when the actor is `github-actions[bot]` or the App's bot, and the harness checks again.
 
 Each Spriggs run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
 
@@ -147,17 +147,17 @@ With the workflow's own token, comments and commits appear as `github-actions[bo
    ```
 5. Pass them to the action: `app-id: ${{ vars.SPRIGGS_APP_ID }}` and `app-private-key: ${{ secrets.SPRIGGS_APP_PRIVATE_KEY }}` under `with:`. This repository's own workflow already does.
 
-When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. This also works on events that are not pull requests, such as a `workflow_dispatch` init run. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
+When `app-id` is set, the action mints a one-hour token from the key before each run and passes it to Spriggs as `GITHUB_TOKEN`, with the slug in `SPRIGGS_APP_SLUG`. This also works on events that are not pull requests, such as a `workflow_dispatch` survey run. For pull requests from forks, which get no secrets, the action skips this step. Spriggs commits as `<slug>[bot] <id+slug[bot]@users.noreply.github.com>`, the address GitHub links to the App, and treats commits by either identity as its own. Without `app-id`, nothing changes.
 
 ## Layout
 
 ```
 action.yml          the GitHub Action other repositories use
-scripts/            open-init-pr.sh (commits docs/ and opens the pull request after an init run in CI),
+scripts/            open-survey-pr.sh (commits docs/ and opens the pull request after a survey run in CI),
                     bunfig.toml (empty on purpose; the action points Bun at it)
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
-.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests and the cold start
+.github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests and the survey
                     by hand, through action.yml)
 ```
 

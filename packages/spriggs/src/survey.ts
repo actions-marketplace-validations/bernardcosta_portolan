@@ -1,10 +1,10 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { INIT_AGENT, VERIFY_AGENT } from "./agent/agents";
-import { buildInitMessage, buildVerifyMessage, TODO_PATH } from "./agent/init-prompt";
+import { SURVEY_AGENT, VERIFY_AGENT } from "./agent/agents";
 import { AgentError, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import type { Provider, Usage } from "./agent/providers/types";
+import { buildSurveyMessage, buildVerifyMessage, TODO_PATH } from "./agent/survey-prompt";
 import { createRuntime, readableFile, type ToolRuntime } from "./agent/tools";
 import { deadLinks } from "./checks/links";
 import { splitFrontmatter } from "./docs/frontmatter";
@@ -12,7 +12,7 @@ import { loadPortolanConfig } from "./docs/portolan";
 import { docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
 import { git } from "./git";
-import { flat, renderInitReport } from "./report";
+import { flat, renderSurveyReport } from "./report";
 
 const n = (x: number) => x.toLocaleString("en-US");
 
@@ -20,18 +20,18 @@ const n = (x: number) => x.toLocaleString("en-US");
 export const STOPPED_EARLY = 3;
 
 /**
- * Cold start: the init agent explores the repository and writes docs/ in the working tree.
+ * Survey: the survey agent explores the repository and writes docs/ in the working tree.
  * Nothing is committed here: locally the author reviews the result and opens the pull request;
- * in CI the action does (scripts/open-init-pr.sh).
+ * in CI the action does (scripts/open-survey-pr.sh).
  * Returns 0, 1 when the post-run check failed, or `STOPPED_EARLY`.
  */
-export async function init(opts: { cwd?: string; model?: string } = {}): Promise<number> {
+export async function survey(opts: { cwd?: string; model?: string } = {}): Promise<number> {
   const cwd = opts.cwd ?? process.cwd();
   const provider = resolveProvider(opts.model);
   const { config, errors } = await loadPortolanConfig(cwd);
   for (const e of errors) console.warn(`warning: ${e}`);
   const index = await docsIndex(cwd);
-  // Untracked files are readable too: a developer may run init before the first commit.
+  // Untracked files are readable too: a developer may run the survey before the first commit.
   const untracked = git(["ls-files", "--others", "--exclude-standard"], cwd)
     .trim()
     .split("\n")
@@ -39,7 +39,7 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   const rt = createRuntime(cwd, new Map(), untracked);
   // The todo is the memory between runs: what the last run did not write or check.
   const todo = await todoBody(cwd);
-  console.log(`init: ${provider.model}, ${index.length} existing docs`);
+  console.log(`survey: ${provider.model}, ${index.length} existing docs`);
 
   let notes = "";
   let checked = "";
@@ -48,11 +48,11 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   let turns: number | undefined;
   try {
     const agent = await runAgent({
-      agent: INIT_AGENT,
+      agent: SURVEY_AGENT,
       provider,
       rt,
-      checks: [deadLinks],
-      userMessage: buildInitMessage({
+      checks: [deadLinks()],
+      userMessage: buildSurveyMessage({
         name: config?.name,
         index,
         tree: fileTree(rt.readable),
@@ -94,7 +94,7 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
   const removedTodo = left === 0 && rt.originals.get(TODO_PATH) != null;
   const written = check.written.filter((p) => p !== TODO_PATH || left > 0);
   // The action takes the text between the two marker lines as the body of the pull request.
-  const report = renderInitReport({
+  const report = renderSurveyReport({
     written,
     created: check.created,
     left,
@@ -106,7 +106,7 @@ export async function init(opts: { cwd?: string; model?: string } = {}): Promise
     model: provider.model,
     turns,
   });
-  console.log(`\n--- init result ---\n${report}\n--- end ---`);
+  console.log(`\n--- survey result ---\n${report}\n--- end ---`);
   console.log("Review the changes in docs/, then commit them and open a pull request.");
   return stopped === undefined ? 0 : STOPPED_EARLY;
 }

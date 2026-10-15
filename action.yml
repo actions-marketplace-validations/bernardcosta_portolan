@@ -7,7 +7,7 @@ branding:
 
 inputs:
   command:
-    description: Leave empty and the event decides. A pull request gives run, which checks the pull request. A start by hand (workflow_dispatch) gives init, which checks the docs of the whole repository against the code, fills the gaps and opens a pull request with them. Set run or init to force one.
+    description: Leave empty and the event decides. A pull request gives run, which checks the pull request. A start by hand (workflow_dispatch) gives survey, which checks the docs of the whole repository against the code, fills the gaps and opens a pull request with them. Set run or survey to force one.
     required: false
     default: ""
   model:
@@ -81,19 +81,19 @@ runs:
         }
         command="$SPRIGGS_COMMAND"
         if [ -z "$command" ]; then
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then command=init; else command=run; fi
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then command=survey; else command=run; fi
         fi
         echo "command=$command" >> "$GITHUB_OUTPUT"
         case "$command" in
           run) spriggs run ;;
-          init)
+          survey)
             # 3 = stopped early: the pages written so far still go into the pull request, then the job fails.
             code=0
-            spriggs init 2>&1 | tee "$RUNNER_TEMP/spriggs-init.log" || code=$?
+            spriggs survey 2>&1 | tee "$RUNNER_TEMP/spriggs-survey.log" || code=$?
             echo "code=$code" >> "$GITHUB_OUTPUT"
             if [ "$code" != 0 ] && [ "$code" != 3 ]; then exit "$code"; fi
             ;;
-          *) echo "unknown command \"$command\": use run or init" >&2; exit 2 ;;
+          *) echo "unknown command \"$command\": use run or survey" >&2; exit 2 ;;
         esac
       env:
         SPRIGGS_COMMAND: ${{ inputs.command }}
@@ -105,17 +105,17 @@ runs:
         SPRIGGS_MODEL: ${{ inputs.model }}
         SPRIGGS_MAX_LINES: ${{ inputs.max-lines }}
     - name: Open the docs pull request
-      if: steps.spriggs.outputs.command == 'init'
+      if: steps.spriggs.outputs.command == 'survey'
       shell: bash
-      run: bash "$GITHUB_ACTION_PATH/scripts/open-init-pr.sh"
+      run: bash "$GITHUB_ACTION_PATH/scripts/open-survey-pr.sh"
       env:
         GH_TOKEN: ${{ steps.app.outputs.token || inputs.github-token }}
         GH_REPO: ${{ github.repository }}
         SPRIGGS_APP_SLUG: ${{ steps.app.outputs.app-slug }}
-        SPRIGGS_INIT_LOG: ${{ runner.temp }}/spriggs-init.log
+        SPRIGGS_SURVEY_LOG: ${{ runner.temp }}/spriggs-survey.log
     - name: Report an early stop
       if: steps.spriggs.outputs.code == '3'
       shell: bash
       run: |
-        echo "::error::spriggs init stopped before it finished. The pages it wrote are in the pull request; docs/todo.md lists what is left."
+        echo "::error::spriggs survey stopped before it finished. The pages it wrote are in the pull request; docs/todo.md lists what is left."
         exit 1

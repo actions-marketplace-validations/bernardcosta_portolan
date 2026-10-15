@@ -7,10 +7,10 @@ covers:
   - packages/spriggs/src/agent/tools.ts
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/prompt.ts
-  - packages/spriggs/src/agent/init-prompt.ts
+  - packages/spriggs/src/agent/survey-prompt.ts
   - packages/spriggs/src/agent/providers/
   - packages/spriggs/src/checks/
-  - packages/spriggs/src/init.ts
+  - packages/spriggs/src/survey.ts
 ---
 
 # The agent harness
@@ -21,7 +21,7 @@ All model work goes through one loop (`agent/loop.ts`). An **agent** (`agent/age
 | --- | --- | --- | --- | --- | --- | --- |
 | `docs`, small tier | `spriggs run`, up to 1,500 lines | `list_files`, `search`, `read_file`, `read_diff`, `write_doc`, `finish` | 30 | 600,000 | 10 min | no |
 | `docs`, large tier | `spriggs run`, above 1,500 lines | same | 40 | 1,500,000 | 15 min | no |
-| `init` | `spriggs init` | `list_files`, `search`, `read_file`, `write_doc`, `finish` | 120 | 2,000,000 (`SPRIGGS_INIT_TOKENS`) | 45 min | yes |
+| `survey` | `spriggs survey` | `list_files`, `search`, `read_file`, `write_doc`, `finish` | 120 | 2,000,000 (`SPRIGGS_SURVEY_TOKENS`) | 45 min | yes |
 
 Tokens count input not served from the provider's cache, plus output. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
 
@@ -47,14 +47,14 @@ Some of the docs contract can be proved by code, with no model. Those checks liv
 - **Changed files not read** (`checks/unread.ts`): changed files whose diff was not inline and that the model has not read. It must read them with `read_diff` or `read_file`. Seen works as in the loop rule above.
 - **Dead links** (`checks/links.ts`): relative links in pages under `docs/` that point to a file that does not exist or, for a markdown page, to a heading it does not have. The anchors are the ones GitHub gives a page: one per heading, lower case, punctuation removed, spaces turned into hyphens, with `-1`, `-2` and so on when a heading repeats, plus any `<a id>` or `<a name>`. Skipped: change entries, fenced code, inline code, HTML comments, and links with a scheme such as `http:` or `mailto:`. Only a link from a page this run wrote, or to a page this run wrote, counts, so a dead link people left elsewhere does not block the model. A relative link that leaves the repository is reported as a missing file.
 
-Which run uses which check: a pull request run uses both; `spriggs init` uses the link check; the `verify` check pass inside `init.ts` uses none, because it may only correct pages that already exist.
+Which run uses which check: a pull request run uses both; `spriggs survey` uses the link check; the `verify` check pass inside `survey.ts` uses none, because it may only correct pages that already exist.
 
 ## The tool pool
 
 The tools are the only way the model touches anything: no shell, no network. Paths are made relative to the repository (`safeRel`); a path that escapes it, or that holds any control character (a line break, an escape code, a null byte), is refused. So a path cannot forge a line in the log or the report.
 
-- `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files that git does not ignore, for `init`).
-- `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -P --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in `init`. The pattern is a Perl-compatible regular expression, so `\b`, `\d` and `(?i)` work. When git was built without Perl regex (PCRE) support, the search runs again with `-E` (POSIX extended), and the result starts with a note saying `\b` and `\d` do not work there. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Binary and generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more. The tool description tells the model that a pattern finds only the words in it, so it should try several patterns and wordings and run them together.
+- `list_files(dir)`: readable files under a folder. Readable means tracked by git, plus this run's changed files (or untracked files that git does not ignore, for the survey).
+- `search(pattern, path)`: `git -c core.quotePath=false grep -n -I -P --untracked` over tracked files and untracked files that git does not ignore, so it sees the same files as `list_files` and `read_file` in the survey. The pattern is a Perl-compatible regular expression, so `\b`, `\d` and `(?i)` work. When git was built without Perl regex (PCRE) support, the search runs again with `-E` (POSIX extended), and the result starts with a note saying `\b` and `\d` do not work there. Non-ASCII paths come out as they are, so the generated-file filter sees the real name. The pattern is 1 to 200 characters. Binary and generated files are dropped. At most 200 lines, each cut at 300 characters, with a note when there are more. The tool description tells the model that a pattern finds only the words in it, so it should try several patterns and wordings and run them together.
 - `read_file(path, start, lines)`: whole lines up to 64 KB per call, with a note naming the next line to ask for. A single line over 64 KB is cut and marked. Only regular files inside the repository; symlinks are refused.
 - `read_diff(path)`: the diff of one changed file, cut at 64 KB. A cut diff does not count as seen. For a new file not in git yet it says to use `read_file`.
 - `write_doc(path, content)`: see the rules in [the docs contract](../reference/docs-contract.md). Also refused: content over 80,000 characters, and a path that resolves outside `docs/` through a symlink. In a repository with no `docs/` folder yet, it creates the folder. Markdown frontmatter and `portolan.yml` are checked on every write. The first write of a file records its old content, so the run can undo it.
@@ -73,8 +73,8 @@ Both clients use a five-minute request timeout. To add a provider, implement the
 
 ## Prompts
 
-`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. The contract text asks the model to search `docs/` for links to a heading or page it renames or moves and to fix them: the rule the link check enforces. The pull request prompt has an "Old facts" rule: when a change renames, removes or changes something a reader relies on, the model searches `docs/` in several wordings for pages that still state the old fact and fixes them, even when their `covers` do not match the diff (see [pull-request-run.md](pull-request-run.md#6-agent-run)). `agent/init-prompt.ts` holds the cold-start prompt and builds its first message from the project name, the existing docs with summaries, the body of `docs/todo.md` from the last run (first 20,000 characters), and a file outline. `init.ts` builds that outline from the runtime's readable set (tracked files plus untracked files git does not ignore): up to 40 root files, then folders two levels deep with file counts, capped at 300 lines, or `(no files)` when there are none. The todo page path is `docs/todo.md`; after the run, `init.ts` counts its list items (lines starting with `-`, `*`, `+`, `1.` or `1)`) and removes it when there are none and the model wrote it in this run. The todo is read with the same check as `read_file` (`readableFile`), so a symlink is ignored.
+`agent/prompt.ts` holds the docs contract text and the style rule shared by both agents, the pull request system prompt, and the builder for the pull request message. The contract text asks the model to search `docs/` for links to a heading or page it renames or moves and to fix them: the rule the link check enforces. The pull request prompt has an "Old facts" rule: when a change renames, removes or changes something a reader relies on, the model searches `docs/` in several wordings for pages that still state the old fact and fixes them, even when their `covers` do not match the diff (see [pull-request-run.md](pull-request-run.md#6-agent-run)). `agent/survey-prompt.ts` holds the survey prompt and builds its first message from the project name, the existing docs with summaries, the body of `docs/todo.md` from the last run (first 20,000 characters), and a file outline. `survey.ts` builds that outline from the runtime's readable set (tracked files plus untracked files git does not ignore): up to 40 root files, then folders two levels deep with file counts, capped at 300 lines, or `(no files)` when there are none. The todo page path is `docs/todo.md`; after the run, `survey.ts` counts its list items (lines starting with `-`, `*`, `+`, `1.` or `1)`) and removes it when there are none and the model wrote it in this run. The todo is read with the same check as `read_file` (`readableFile`), so a symlink is ignored.
 
-## Init exit codes
+## Survey exit codes
 
-`init()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. The `check failed:` line printed for code 1 is flattened to one line. In the action, code 3 still lets `scripts/open-init-pr.sh` open the pull request, with the report's **Stopped early** line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.
+`survey()` returns 0 for a complete run, 1 when the post-run check fails (checked after an early stop too, so it wins), and `STOPPED_EARLY` (3) when `runAgent` threw before `finish`. The `check failed:` line printed for code 1 is flattened to one line. In the action, code 3 still lets `scripts/open-survey-pr.sh` open the pull request, with the report's **Stopped early** line in its body, and a later step then fails the job. Any other non-zero code fails the step before the pull request is opened.

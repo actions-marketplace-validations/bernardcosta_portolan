@@ -168,7 +168,7 @@ export class GitHubForge implements Forge {
 
   async docsDebt(limit: number): Promise<Debt[]> {
     const { owner, repo } = this.target;
-    // The 100 most recently updated closed pull requests on the base branch: older debt is for the cold start.
+    // The 100 most recently updated closed pull requests on the base branch: older debt is for the survey.
     const { data } = await this.octokit.pulls.list({
       owner,
       repo,
