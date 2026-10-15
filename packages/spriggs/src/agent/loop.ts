@@ -185,7 +185,9 @@ function describe(name: string, input: unknown): string {
     const lines = str(o.content).split("\n").length;
     return `write_doc ${str(o.path)} (${lines} line${lines === 1 ? "" : "s"})`;
   }
-  if (name === "read_file" || name === "read_diff") return `${name} ${str(o.path)}`;
+  if (name === "move_doc") return `move_doc ${str(o.from)} -> ${str(o.to)}`;
+  if (name === "read_file" || name === "read_diff" || name === "delete_doc")
+    return `${name} ${str(o.path)}`;
   return name;
 }
 

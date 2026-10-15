@@ -28,7 +28,7 @@ Every project keeps its docs in a `docs/` folder in git. Spriggs writes to it, a
 
 Folders go at most two levels deep under `docs/`. For example `docs/guides/deploy.md` and `docs/guides/cloud/aws.md` are fine, `docs/a/b/c/page.md` is not.
 
-Spriggs's `write_doc` tool only writes `.md`, `.yml` and `.html` files, and never under `docs/api/` or `docs/changes/`.
+Spriggs's `write_doc`, `move_doc` and `delete_doc` tools share one set of path rules. They only touch `.md`, `.yml` and `.html` files, never under `docs/api/` or `docs/changes/`, and never a symlink out of `docs/`. The required pages `docs/overview.md`, `docs/setup.md` and `docs/portolan.yml` can be edited in place, but never moved or deleted.
 
 ## Page frontmatter
 
@@ -60,7 +60,7 @@ Links between pages must work. When a heading is renamed or renumbered, or a pag
 
 A relative link in a page under `docs/` must point to a file that exists and, when it points at a markdown page, to a heading on that page. The anchors are the ones GitHub gives a page: one per heading, lower case, punctuation removed, spaces turned into hyphens, with `-1`, `-2` and so on when a heading repeats, plus any `<a id>` or `<a name>`. Change entries, fenced code, inline code, HTML comments and links with a scheme (`http:`, `mailto:`) are skipped. A relative link that leaves the repository is reported.
 
-This is a check on the model, not on you. It runs when the model calls `finish`, and only for links from or to a page that run wrote, so a dead link people left elsewhere in the repository does not get in the model's way. The first `finish` with a dead link is refused with the list of them; a second `finish` is accepted as it is. See [Hard checks](../spriggs/agent-harness.md#hard-checks).
+This is a check on the model, not on you. It runs when the model calls `finish`, and only for links from or to a page that run wrote, so a dead link people left elsewhere in the repository does not get in the model's way. A page the model moved or deleted counts as written, so a link to its old path is caught. The first `finish` with a dead link is refused with the list of them; a second `finish` is accepted as it is. See [Hard checks](../spriggs/agent-harness.md#hard-checks).
 
 ## portolan.yml
 
@@ -108,18 +108,18 @@ How the fields are filled:
 
 - `kind` comes from the Conventional Commits type when there is one (`feat` gives `added`, `fix` gives `fixed`, `perf` gives `changed`, and `refactor`, `chore`, `ci`, `build`, `test`, `style`, `docs` give `internal`). The model may narrow `added` to `changed`. With no type, the model chooses; `unknown` becomes `changed`.
 - `breaking` is set when a title or commit subject has `!` after its type, or a line in the description or a commit body starts with `BREAKING CHANGE:` (or `BREAKING-CHANGE:`).
-- `docs` keeps only paths the run wrote or that already exist under `docs/`.
+- `docs` keeps only paths the run wrote or that already exist under `docs/`. A page the run deleted is left out.
 - An `internal` change gets no entry, unless the model marks it as a large refactor.
 - In `--local` mode the entry is printed, not written.
 
 ## What the post-run check refuses
 
-After the model finishes, Spriggs checks every file it wrote. A file written back with its original content does not count. The check fails when:
+After the model finishes, Spriggs checks every file it changed, including the pages it deleted. A file written back with its original content does not count, and a deleted file does count. The check fails when:
 
-- a written file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
+- a changed file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
 - a markdown page has missing or invalid frontmatter;
 - `docs/portolan.yml` breaks the rules above;
-- the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs survey` has no cap);
+- the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs survey` has no cap). A deletion adds no lines, and a page moved without other changes adds none either, so moving a long page does not fail the cap;
 - in CI, on a pull request run, any other file in the working tree changed.
 
-On a pull request run, a failed check fails the run and every write is undone. On `spriggs survey`, the files are left in place for you to review, and the survey exits with code 1.
+On a pull request run, a failed check fails the run and every write, move and deletion is undone. On `spriggs survey`, the files are left in place for you to review, and the survey exits with code 1.

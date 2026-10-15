@@ -180,7 +180,11 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       pr: ctx.pr?.number ?? 0,
       coverage: partial ? "partial" : "full",
       ...(reason ? { reason } : {}),
-      docs: result.docs.filter((d) => check.written.includes(d) || index.some((i) => i.path === d)),
+      docs: result.docs.filter(
+        (d) =>
+          !check.deleted.includes(d) &&
+          (check.written.includes(d) || index.some((i) => i.path === d)),
+      ),
       body: result.body,
     };
     try {
@@ -239,6 +243,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     ...(caughtUp ? { caughtUp } : {}),
     written: check.written,
     created: check.created,
+    deleted: check.deleted,
     ...(entryPath ? { entry: entryPath } : {}),
     ...base,
   };

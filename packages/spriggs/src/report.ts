@@ -31,6 +31,7 @@ export type RunReport =
       kind: "docs";
       written: string[];
       created: string[];
+      deleted: string[];
       entry?: string;
       notes: string;
       usage: Usage;
@@ -152,10 +153,17 @@ const noteText = (s: string): string =>
       .trim(),
   );
 
+/** What happened to a file in a report's list. A move shows as the new page and the deleted one. */
+function fileMark(path: string, r: { created: string[]; deleted: string[] }): string {
+  if (r.created.includes(path)) return " (new page)";
+  return r.deleted.includes(path) ? " (deleted)" : "";
+}
+
 /** The body of the pull request that a survey opens; locally, the text printed at the end. */
 export function renderSurveyReport(r: {
   written: string[];
   created: string[];
+  deleted: string[];
   /** Items still listed in docs/todo.md. */
   left: number;
   /** The run cleared and removed a todo left by an earlier run. */
@@ -180,7 +188,7 @@ export function renderSurveyReport(r: {
       ? [`> **Stopped early:** ${flat(r.stopped)}. I kept the pages I had written before that.`, ""]
       : []),
     ...(r.written.length
-      ? r.written.map((p) => `- \`${flat(p)}\`${r.created.includes(p) ? " (new page)" : ""}`)
+      ? r.written.map((p) => `- \`${flat(p)}\`${fileMark(p, r)}`)
       : ["I wrote no pages."]),
     ...(r.left
       ? [
@@ -263,7 +271,7 @@ function renderRun(run: RunReport): string[] {
       ? [
           "The `docs:` commit on this branch has these changes:",
           "",
-          ...run.written.map((p) => `- \`${p}\`${run.created.includes(p) ? " (new page)" : ""}`),
+          ...run.written.map((p) => `- \`${p}\`${fileMark(p, run)}`),
           ...(run.entry ? [`- \`${run.entry}\` (the change entry)`] : []),
           "",
         ]

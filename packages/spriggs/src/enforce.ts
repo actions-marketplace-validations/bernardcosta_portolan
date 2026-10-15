@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolRuntime } from "./agent/tools";
 import { validateDoc } from "./docs/frontmatter";
@@ -13,14 +14,23 @@ export const MAX_DOC_LINES = 1500;
 export async function enforce(
   rt: ToolRuntime,
   opts: { strictTree: boolean; maxLines?: number },
-): Promise<{ ok: true; written: string[]; created: string[] } | { ok: false; reason: string }> {
-  // A file written back with its original content is not a change.
+): Promise<
+  | { ok: true; written: string[]; created: string[]; deleted: string[] }
+  | { ok: false; reason: string }
+> {
+  // A file written back with its original content is not a change. `written` holds deleted files too.
   const written: string[] = [];
   const created: string[] = [];
+  const deleted: string[] = [];
+  const now = new Map<string, string | null>();
   for (const [path, original] of rt.originals) {
-    if ((await Bun.file(join(rt.cwd, path)).text()) === original) continue;
+    const abs = join(rt.cwd, path);
+    const text = existsSync(abs) ? await Bun.file(abs).text() : null;
+    if (text === original) continue;
+    now.set(path, text);
     written.push(path);
     if (original === null) created.push(path);
+    if (text === null) deleted.push(path);
   }
   written.sort();
   for (const path of written) {
@@ -31,7 +41,8 @@ export async function enforce(
     ) {
       return { ok: false, reason: `wrote outside the allowed area: ${path}` };
     }
-    const text = await Bun.file(join(rt.cwd, path)).text();
+    const text = now.get(path);
+    if (text === null || text === undefined) continue; // deleted: nothing to validate
     if (path.endsWith(".md")) {
       const errors = validateDoc(text);
       if (errors.length) return { ok: false, reason: `${path}: ${errors.join("; ")}` };
@@ -42,14 +53,16 @@ export async function enforce(
     }
   }
 
+  // The cap is on text a reviewer must read: a deletion or an unchanged moved page adds none.
+  const movedContent = new Set(deleted.map((p) => rt.originals.get(p)));
   let lines = 0;
   for (const path of written) {
     const original = rt.originals.get(path);
-    const text = await Bun.file(join(rt.cwd, path)).text();
-    lines +=
-      original === null || original === undefined
-        ? text.split("\n").length
-        : diffLines(original, text);
+    const text = now.get(path);
+    if (text === null || text === undefined) continue;
+    if (original === null || original === undefined) {
+      if (!movedContent.has(text)) lines += text.split("\n").length;
+    } else lines += diffLines(original, text);
   }
   const cap = opts.maxLines ?? MAX_DOC_LINES;
   if (lines > cap)
@@ -69,7 +82,7 @@ export async function enforce(
         reason: `unexpected changes outside the model's writes: ${stray.join(", ")}`,
       };
   }
-  return { ok: true, written, created };
+  return { ok: true, written, created, deleted };
 }
 
 /** A cheap upper bound on changed lines: lines that differ between the two texts. */
