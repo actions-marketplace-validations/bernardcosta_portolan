@@ -18,8 +18,16 @@ export type Coverage = {
   missed: string[];
 };
 
+/** What a finished run reports about the docs debt of earlier merged pull requests. */
+type DebtReport = {
+  /** Merged pull requests this run checked and marked docs:done. */
+  caughtUp?: number[];
+  /** More debt than one run checks. */
+  moreDebt?: boolean;
+};
+
 export type RunReport =
-  | {
+  | ({
       kind: "docs";
       written: string[];
       created: string[];
@@ -29,15 +37,23 @@ export type RunReport =
       model: string;
       turns: number;
       coverage: Coverage;
-    }
-  | { kind: "none"; notes: string; usage: Usage; model: string; turns: number; coverage: Coverage }
-  | { kind: "failed"; reason: string; usage?: Usage; model?: string };
+    } & DebtReport)
+  | ({
+      kind: "none";
+      notes: string;
+      usage: Usage;
+      model: string;
+      turns: number;
+      coverage: Coverage;
+    } & DebtReport)
+  | { kind: "failed"; reason: string; error?: string; usage?: Usage; model?: string };
 
 /** The first line of the comment: the label people see, then what it means for this change. */
 export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport): string {
   const size = `${n(s.linesChanged)} lines in ${n(s.filesChanged)} files`;
   if (run?.kind === "failed") {
-    return `**docs:needs-input** — I could not update the docs. ${run.reason} I committed nothing. Fix the cause and push, or edit the description, and I will run again.`;
+    const error = run.error ? `\n\n${codeBlock(run.error)}\n\n` : " ";
+    return `**docs:needs-input** — I could not update the docs. ${run.reason}${error}I committed nothing. Fix the cause and push, or edit the description, and I will run again.`;
   }
   if (v.outcome === "abstain") {
     return v.reason === "too-large"
@@ -77,6 +93,20 @@ export function statusLine(v: Verdict, s: Signals, missed = 0): string {
         ? `stopped: ${n(s.linesChanged)} lines is above the ${n(maxLines())} line limit, split the change`
         : "stopped: no reason and the change is too big, add a Why section";
   }
+}
+
+/**
+ * Error text in a fenced code block, so it reads as a block and markdown inside it does nothing.
+ * The fence is longer than any run of backticks in the text, so the text cannot close it.
+ */
+function codeBlock(text: string): string {
+  const clean = text
+    .replace(/[^\P{Cc}\n]/gu, " ")
+    .trim()
+    .slice(0, 2_000);
+  const longest = Math.max(0, ...(clean.match(/`+/g) ?? []).map((m) => m.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}text\n${clean}\n${fence}`;
 }
 
 const yes = (b: boolean) => (b ? "yes" : "no");
@@ -238,5 +268,19 @@ function renderRun(run: RunReport): string[] {
           "",
         ]
       : [];
-  return [...files, ...note, ...missed, usageLine(run.usage, run.model, run.turns)];
+  const debt = [
+    ...(run.caughtUp?.length
+      ? [
+          `I also checked the docs for earlier merged pull requests whose docs were never fully updated: ${run.caughtUp.map((pr) => `#${pr}`).join(", ")}. I marked them \`docs:done\`.`,
+          "",
+        ]
+      : []),
+    ...(run.moreDebt
+      ? [
+          "> **More docs debt:** more merged pull requests have unchecked docs than I check in one run. Run the cold start (Actions → spriggs → Run workflow) to check the docs of the whole repository.",
+          "",
+        ]
+      : []),
+  ];
+  return [...files, ...debt, ...note, ...missed, usageLine(run.usage, run.model, run.turns)];
 }

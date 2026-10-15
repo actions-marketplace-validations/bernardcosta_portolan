@@ -10,13 +10,16 @@ import { loadPortolanConfig } from "./docs/portolan";
 import { affectedDocs, docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
 import { type Entry, renderEntry, writeEntry } from "./entry/writer";
-import type { Forge, Label, StatusState } from "./forge/types";
+import type { Debt, Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { isGenerated, signals } from "./gate/signals";
 import { diffByFile, git } from "./git";
 import { type Coverage, type RunReport, renderComment, statusLine } from "./report";
 
 export type RunOptions = { cwd?: string; model?: string };
+
+/** Merged pull requests with unchecked docs that one run catches up on. More than this is a job for the cold start. */
+const MAX_DEBT = 10;
 
 /** context -> skip rules -> stage one -> decide -> agent -> enforce -> entry -> commit -> report. */
 export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> {
@@ -74,22 +77,39 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   } catch (e) {
     return report("docs:needs-input", ["failure", "Spriggs is not configured"], {
       kind: "failed",
-      reason: `Configuration error: ${(e as Error).message}.`,
+      reason: "Configuration error:",
+      error: (e as Error).message,
     });
   }
 
   const changedPaths = ctx.files.map((f) => f.path);
   const rt = createRuntime(cwd, diffByFile(ctx.diffRevisions, cwd), changedPaths);
-  const fail = async (reason: string, usage?: Usage) => {
+  /** `error` is the raw error text: the comment shows it in a code block. */
+  const fail = async (reason: string, usage?: Usage, error?: unknown) => {
     await revertWrites(rt);
-    console.error(`failed: ${reason}`);
-    return report("docs:needs-input", ["failure", reason.slice(0, 140)], {
+    const text =
+      error === undefined ? "" : (error instanceof Error && error.message) || String(error);
+    console.error(`failed: ${reason}${text ? ` ${text}` : ""}`);
+    return report("docs:needs-input", ["failure", `${reason} ${text}`.trim().slice(0, 140)], {
       kind: "failed",
       reason,
+      ...(text ? { error: text } : {}),
       ...(usage ? { usage } : {}),
       model: provider.model,
     });
   };
+
+  // Docs debt: merged pull requests whose docs were never fully updated. A lookup error never fails the run.
+  let debt: Debt[] = [];
+  let moreDebt = false;
+  try {
+    debt = await forge.docsDebt(MAX_DEBT + 1);
+    moreDebt = debt.length > MAX_DEBT;
+    debt = debt.slice(0, MAX_DEBT);
+    if (debt.length) console.log(`debt: ${debt.map((d) => `#${d.number}`).join(", ")}`);
+  } catch (e) {
+    console.warn(`warning: could not list the docs debt: ${(e as Error).message}`);
+  }
 
   let agent: AgentResult;
   try {
@@ -104,6 +124,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       diffs: rt.diffs,
       index,
       affected: affectedDocs(index, changedPaths),
+      debt,
     });
     agent = await runAgent({
       provider,
@@ -119,7 +140,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
         `This change does not fit the context window of ${provider.model}. Use a model with a larger window, lower SPRIGGS_CONTEXT_TOKENS so older tool results are cleared sooner, or split the pull request.`,
       );
     }
-    return fail(`The agent run failed: ${(e as Error).message}`);
+    return fail("The agent run failed:", undefined, e);
   }
   const { result, usage, turns } = agent;
 
@@ -133,7 +154,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
 
   // The tree check only in CI: a local working copy has the author's own uncommitted changes.
   const check = await enforce(rt, { strictTree: ctx.event !== undefined });
-  if (!check.ok) return fail(`Post-run check failed: ${check.reason}`, usage);
+  if (!check.ok) return fail(`Post-run check failed: ${check.reason}.`, usage);
 
   // Partial when the author gave no reason, or when changed files went unread before the budget ran out.
   const partial = verdict.outcome === "partial" || coverage.missed.length > 0;
@@ -173,21 +194,38 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
         entryPath = "(printed above; written only in CI)";
       }
     } catch (e) {
-      return fail(`Could not write the change entry: ${(e as Error).message}`, usage);
+      return fail("Could not write the change entry:", usage, e);
     }
   }
 
-  const base = { usage, model: provider.model, turns, notes: result.notes, coverage };
+  const base = { usage, model: provider.model, turns, notes: result.notes, coverage, moreDebt };
   const status: [StatusState, string] = ["success", statusLine(verdict, s, coverage.missed.length)];
+  // The debt is paid only by a full run; a partial run leaves it for the next one.
+  const clearDebt = async (): Promise<number[] | undefined> => {
+    if (partial || !debt.length) return undefined;
+    const prs = debt.map((d) => d.number);
+    try {
+      await forge.clearDebt(prs);
+      return prs;
+    } catch (e) {
+      console.warn(`warning: could not clear the docs debt: ${(e as Error).message}`);
+      return undefined;
+    }
+  };
   if (check.written.length === 0 && !entryPath) {
-    return report(partial ? "docs:partial" : "docs:none", status, { kind: "none", ...base });
+    const caughtUp = await clearDebt();
+    return report(partial ? "docs:partial" : "docs:none", status, {
+      kind: "none",
+      ...base,
+      ...(caughtUp ? { caughtUp } : {}),
+    });
   }
 
   let pushed: Awaited<ReturnType<Forge["commitAndPush"]>>;
   try {
     pushed = await forge.commitAndPush(`docs: ${oneLine(result.title)}`);
   } catch (e) {
-    return fail(`Could not push the docs commit: ${(e as Error).message}`, usage);
+    return fail("Could not push the docs commit:", usage, e);
   }
   if (pushed === "superseded") {
     console.log("superseded: the branch moved during the run");
@@ -195,8 +233,10 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   }
   // The marker names the head after the docs commit, so the next drift count excludes it.
   if (pushed === "pushed") marker.headSha = git(["rev-parse", "HEAD"], cwd).trim();
+  const caughtUp = await clearDebt();
   const runReport: RunReport = {
     kind: "docs",
+    ...(caughtUp ? { caughtUp } : {}),
     written: check.written,
     created: check.created,
     ...(entryPath ? { entry: entryPath } : {}),
