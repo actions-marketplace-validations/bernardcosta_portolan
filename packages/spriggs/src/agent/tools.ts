@@ -33,6 +33,8 @@ export type ToolRuntime = {
   diffs: Map<string, string>;
   /** Files the model wrote this run, with their content before the first write (null = did not exist). */
   originals: Map<string, string | null>;
+  /** When set, write_doc accepts only these paths (a checker corrects its own pages). */
+  writable?: Set<string> | undefined;
   finished?: FinishResult | undefined;
 };
 
@@ -333,6 +335,8 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
 async function writeDoc(rt: ToolRuntime, rawPath: unknown, content: unknown): Promise<ToolResult> {
   const path = safeRel(rawPath);
   if (!path?.startsWith("docs/")) return err("path must be under docs/");
+  if (rt.writable && !rt.writable.has(path))
+    return err("you may only correct the pages in the message");
   if (path.startsWith("docs/api/"))
     return err("docs/api/ is generated from the build; do not edit it");
   if (path.startsWith("docs/changes/"))
