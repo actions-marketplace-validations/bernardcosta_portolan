@@ -92,6 +92,23 @@ function usageLine(u: Usage, model: string | undefined, turns?: number): string 
  */
 export const flat = (s: string): string => s.replace(/[\p{Cc}\s]+/gu, " ").trim();
 
+/**
+ * The model's note with @mentions, issue references and links put in code, outside existing code spans.
+ * GitHub does not ping, link or close anything inside code, so a note cannot close an issue or notify people.
+ * A lone backtick becomes a quote mark: it could pair with an added one and free a mention.
+ */
+export const quiet = (s: string): string =>
+  s
+    .split(/(`[^`]+`)/)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part
+            .replace(/`/g, "'")
+            .replace(/https?:\/\/\S+|[\w.-]+\/[\w.-]+#\d+|\B[@#][\w-]+|\bGH-\d+/gi, "`$&`"),
+    )
+    .join("");
+
 /** The body of the pull request that a cold start opens; locally, the text printed at the end. */
 export function renderInitReport(r: {
   written: string[];
@@ -107,7 +124,7 @@ export function renderInitReport(r: {
   model: string;
   turns: number | undefined;
 }): string {
-  const notes = flat(r.notes);
+  const notes = quiet(flat(r.notes));
   return [
     "## Spriggs: cold start report",
     "",
@@ -190,7 +207,7 @@ export function renderComment(
 function renderRun(run: RunReport): string[] {
   if (run.kind === "failed") return run.usage ? [usageLine(run.usage, run.model)] : [];
 
-  const note = run.notes ? [`A note from the run: ${run.notes}`, ""] : [];
+  const note = run.notes ? [`A note from the run: ${quiet(run.notes)}`, ""] : [];
   const missed = run.coverage.missed.length
     ? ["**Not read:**", "", ...run.coverage.missed.map((p) => `- \`${p}\``), ""]
     : [];

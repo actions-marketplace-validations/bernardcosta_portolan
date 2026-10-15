@@ -45,7 +45,7 @@ The report is markdown, headed "Spriggs: cold start report". It is written like 
 - "A note from the run:" with the model's note, if any;
 - a line with the model name, tokens and turns.
 
-The note, the stop reason and the file paths are flattened to one line each: line breaks and control characters become spaces. So no model text can start a line of its own and pass for a marker line or a CI workflow command.
+The note, the stop reason and the file paths are flattened to one line each: line breaks and control characters become spaces. So no model text can start a line of its own and pass for a marker line or a CI workflow command. In the note, `@` mentions, issue references and links are put in code. The same holds for the note in the sticky comment of a pull request run. GitHub does not notify, link or close anything inside code, so a note cannot ping people or close an issue when the pull request is merged.
 
 ## Exit codes
 

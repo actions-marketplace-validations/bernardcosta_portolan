@@ -180,9 +180,10 @@ export function toolDefs(names: ToolName[]): ToolDef[] {
   return TOOL_DEFS.filter((t) => names.includes(t.name as ToolName));
 }
 
-/** A normalised repo-relative path, or undefined when it escapes the repo. */
+/** A normalised repo-relative path, or undefined when it escapes the repo or holds a control character. */
 export function safeRel(input: unknown): string | undefined {
-  if (typeof input !== "string" || input.includes("\0")) return undefined;
+  // A newline or escape code in a path could forge a line in the log or the report.
+  if (typeof input !== "string" || /\p{Cc}/u.test(input)) return undefined;
   const n = posix.normalize(input.replace(/\\/g, "/")).replace(/^\.\//, "").replace(/^\/+/, "");
   if (n === ".." || n.startsWith("../") || n.startsWith("/")) return undefined;
   return n === "." ? "" : n;
