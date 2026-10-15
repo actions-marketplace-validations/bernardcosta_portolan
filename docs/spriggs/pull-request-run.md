@@ -16,11 +16,12 @@ covers:
 2. Skip rules
 3. Signals (gate stage one)
 4. Verdict (gate stage two)
-5. Agent run
-6. Post-run check
-7. Change entry
-8. Commit and push
-9. Report
+5. Docs debt
+6. Agent run
+7. Post-run check
+8. Change entry
+9. Commit and push
+10. Report
 
 ## 1. Read the context
 
@@ -64,13 +65,26 @@ On abstain, Spriggs writes nothing and sets `docs:needs-input`. The tier picks t
 
 Spriggs also notes drift. The sticky comment stores a hash of the description and the head commit. If the description is the same as last time but new commits arrived, the comment shows a **Heads up** with the number of new commits, and the model is told to prefer the commit messages for them. Spriggs's own docs commit is not counted. This never blocks.
 
-## 5. Agent run
+## 5. Docs debt
+
+A run reads only its own diff. So a pull request whose run failed or only read part of the change could be merged with its docs still unchecked. Those runs left the label `docs:needs-input` or `docs:partial` behind, and that is the debt.
+
+Before the agent runs, Spriggs asks the forge for the merged pull requests on the base branch that still carry one of those labels (`docsDebt` in [forge/types.ts](forges.md)). It looks at the 100 most recently updated closed pull requests and keeps the newest 10 of them (`MAX_DEBT` in `run.ts`). More than 10 is a job for the cold start. A lookup error only prints a warning; the run goes on without debt.
+
+The agent message gets a section listing each debt pull request by number, title and changed file paths. Paths, not the old diff: the docs must match the code as it is now, so the model reads the files it needs. Generated files are left out, and the title is marked as untrusted data.
+
+A full run — one that ends `docs:done` or `docs:none` — marks those pull requests `docs:done`, so a later run does not see them again. A partial or failed run clears nothing and leaves the debt for the next run. If the lookup found more than 10, the comment says so and points to the cold start.
+
+Two things follow from this. The debt is cleared when this pull request's run succeeds, not when this pull request is merged, so a pull request that is then closed unmerged loses the catch-up edits and the debt label with it. And on an older pull request, `docs:done` means "a later run checked it", not "its own run did". A pull request that was merged with `docs:done` and still missed a fact is not seen as debt.
+
+## 6. Agent run
 
 Spriggs picks the model (see [configuration.md](../reference/configuration.md#how-the-model-is-picked)). A missing model or key fails the run here. The model gets one message with:
 
 - the title, description and commits (subject and body), marked as untrusted author data;
 - the gate's facts;
 - the changed files with line counts;
+- the docs debt, when there is any (see [step 5](#5-docs-debt));
 - every tracked file under `docs/` except change entries. Markdown pages show their `summary` (and `audience: agent` when set). Other files, such as `portolan.yml`, show the path only. Specs under `docs/api/` are marked as read-only;
 - the docs whose `covers` match the diff (see [the docs contract](../reference/docs-contract.md#how-covers-is-used));
 - as many whole-file diffs as fit in about 320 KB (about 5,000 changed lines). A file's diff is never cut in the middle. Files that do not fit are listed as "not shown", and the model must read them before it finishes; the first `finish` without them is refused, a second one is accepted.
@@ -83,19 +97,19 @@ After the run, Spriggs counts which changed files the model saw (inline, or read
 
 If the conversation no longer fits the model's context window, the provider rejects the request; nothing is cut. The run fails with a message that says the change does not fit. To fix it, use a model with a larger window, lower `SPRIGGS_CONTEXT_TOKENS` so older tool results are cleared sooner (see [agent-harness.md](agent-harness.md#the-loop)), or split the pull request. A run that runs out of turns, tokens or time before `finish` also fails.
 
-## 6. Post-run check
+## 7. Post-run check
 
 `enforce.ts` checks every file the model wrote. In CI it also checks that nothing else in the working tree changed. The rules are in [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). On any failure, every write is undone.
 
-## 7. Change entry
+## 8. Change entry
 
 The run is partial when the verdict was partial (`reason-missing`) or when some changed files went unread (`diff-too-large`). The entry is written unless the change is `internal` and not a large refactor. In `--local` mode it is printed to the console instead of written, since there is no pull request number. See [the docs contract](../reference/docs-contract.md#change-entries) for the format.
 
-## 8. Commit and push
+## 9. Commit and push
 
 When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line, at most 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run. After a push, the comment's hidden marker and the commit status name the new docs commit.
 
-## 9. Report
+## 10. Report
 
 Each run that is not skipped or superseded posts the sticky comment, sets one label and sets the `spriggs` status:
 
@@ -107,6 +121,6 @@ Each run that is not skipped or superseded posts the sticky comment, sets one la
 | Gate abstained | `docs:needs-input` | success, or failure when the change is breaking or `SPRIGGS_BLOCKING=true` |
 | Failed (configuration, agent error, budget, context window, check, entry or push) | `docs:needs-input` | failure |
 
-The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the first 140 characters of the reason instead. The one exception is a configuration error (no model, or no key for it): its status text is `Spriggs is not configured`, and the reason is in the comment. The comment's first line is the label in bold and what it means. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the cold start (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit (new ones marked "(new page)"), any note from the model, any unread files under **Not read:**, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals, including the size and the line limit.
+The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the first 140 characters of the reason instead. The one exception is a configuration error (no model, or no key for it): its status text is `Spriggs is not configured`, and the reason is in the comment. The comment's first line is the label in bold and what it means. A failed run puts the raw error just after the reason, in a fenced code block, so it reads as a block and markdown inside it does nothing; the fence is longer than any run of backticks in the text. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the cold start (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit (new ones marked "(new page)"), a line naming the debt pull requests this run caught up on, a **More docs debt** note when there were more than 10, any note from the model, any unread files under **Not read:**, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals, including the size and the line limit.
 
 In the model's note, `@` mentions, issue references (`#12`, `owner/repo#12`, `GH-12`) and links are put in code, and a lone backtick becomes `'`. GitHub does not notify, link or close anything inside code, so the note cannot ping people or close an issue. The commit message is not treated this way: a title with "fixes #12" in `docs: <title>` can still close that issue on merge.
