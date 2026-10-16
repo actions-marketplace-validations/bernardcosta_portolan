@@ -4,6 +4,7 @@ covers:
   - packages/spriggs/src/survey.ts
   - packages/spriggs/src/agent/survey-prompt.ts
   - packages/spriggs/src/agent/agents.ts
+  - packages/spriggs/src/checks/links.ts
   - packages/spriggs/src/report.ts
   - scripts/open-survey-pr.sh
   - action.yml
@@ -30,11 +31,12 @@ The survey never commits. It leaves its pages in the working tree. Locally you r
 
    Existing docs keep every fact the code supports, and the model changes what the code contradicts. It may also clean up: replace repeated text with a link and move a section to the page where it belongs. Docs describe how things work now, so it removes history and migration notes (the change entries keep the history) and text about files, commands, options or behaviour that the code no longer has. It moves a page with `move_doc` when its path no longer fits its subject, and deletes a page with `delete_doc` when its whole subject is gone from the code or another page already says all of it. It fixes the links to a page it moves or deletes, and names each change, move and deletion in its note. The todo is treated as data, like any other repository file. Tools and budget are in [agent-harness.md](agent-harness.md). When 80% of the budget is spent, the model is told once to stop exploring, make the todo accurate and finish; the console logs `budget: nearly spent; told the model to wrap up`.
 
-   When the model calls `finish`, one check runs first. A relative link in a page under `docs/` that points to a file or heading that is not there refuses that finish once, with the list of dead links; only links from or to a page this run wrote count. A second `finish` is accepted. See [Hard checks](agent-harness.md#hard-checks).
-5. **Catch an early stop.** If the budget, the context window or the model gives out, the error is caught. The pages written so far stay. The console logs `stopped early:` with the reason and the tokens used. The stop reason is kept on one line, and is never empty ("unknown error" when there is no message).
-6. **Post-run check.** `enforce.ts` checks every file the model changed, including deleted pages, with the same rules as a pull request run, but with no line cap and without the working-tree check. See [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). If it fails, Spriggs prints the reason, leaves the files for you to review, and exits with code 1.
-7. **Count the todo.** Spriggs counts list items in the body of `docs/todo.md`. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) count. If none are left and the model wrote the todo in this run, Spriggs deletes the file. It never deletes a todo the model did not write.
-8. **Print the report** between the lines `--- survey result ---` and `--- end ---`.
+   When the model calls `finish`, one check runs first. A relative link in any page under `docs/` that points to a file or heading that is not there refuses that finish once, with the list of dead links. Change entries and `docs/api/` are skipped. A second `finish` is accepted. See [Hard checks](agent-harness.md#hard-checks).
+5. **Check the pages it wrote.** When the survey agent finished, a second set of agents checks the result. Each checker gets a fresh conversation, its own budget (60 turns, 1,000,000 tokens, 20 minutes) and a batch of at most three of the markdown pages this run wrote or moved, so it does not trust what the run wrote. It reads the code again and corrects the claims the code does not support. At most three checkers run at the same time, and batches are balanced by page size. The console logs `verify: checking N page(s) in M batch(es)` and then `verify: done:` with the tokens. A checker that runs out of budget stops on its own: the corrections it already wrote stay, the console logs `verify stopped: <reason>`, and the run goes on. A checker may only write the pages of its own batch, so it cannot add or delete a page, and it has no `finish` checks of its own. Pages this run deleted, and `docs/todo.md`, are not checked. A run that stopped early runs no checkers.
+6. **Catch an early stop.** If the budget, the context window or the model gives out, the error is caught. The pages written so far stay. The console logs `stopped early:` with the reason; when the harness itself stopped the run (the budget or the turn limit), the tokens used so far come with it. A context-window or model error carries no token count. The stop reason is kept on one line, and is never empty ("unknown error" when there is no message).
+7. **Post-run check.** `enforce.ts` checks every file the model changed, including deleted pages, with the same rules as a pull request run, but with no line cap and without the working-tree check. See [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). If it fails, Spriggs prints the reason, leaves the files for you to review, and exits with code 1.
+8. **Count the todo.** Spriggs counts list items in the body of `docs/todo.md`. Bullets (`-`, `*`, `+`) and numbered items (`1.` or `1)`) count. If none are left and the model wrote the todo in this run, Spriggs deletes the file. It never deletes a todo the model did not write.
+9. **Print the report** between the lines `--- survey result ---` and `--- end ---`.
 
 ## The report
 
@@ -45,9 +47,10 @@ The report is markdown, headed "Spriggs: survey report". It is written like the 
 - "N items left to write or check", pointing to `docs/todo.md`; or "I wrote and checked every page I planned." when the run finished with nothing left. A run that stopped early with no todo makes neither claim;
 - "I removed `docs/todo.md`: nothing is left." when the run cleared a todo from an earlier run;
 - "A note from the run:" with the model's note, if any;
-- a line with the model name, tokens and turns.
+- "**Checked against the code after writing:**" with one list item per correction the check pass made, when it made any;
+- a line with the model name, tokens and turns, the check pass's tokens and turns included, when the run knows them; a stop on an error that carries no usage leaves the line out.
 
-The note, the stop reason and the file paths are flattened to one line each: line breaks and control characters become spaces. So no model text can start a line of its own and pass for a marker line or a CI workflow command. In the note, `@` mentions, issue references and links are put in code. The same holds for the note in the sticky comment of a pull request run. GitHub does not notify, link or close anything inside code, so a note cannot ping people or close an issue when the pull request is merged.
+The stop reason and the file paths are flattened to one line each: line breaks and control characters become spaces, so neither can start a line of its own. The note keeps its line breaks: its other control characters become spaces, and a line that begins with `---` is escaped, so it cannot pass for a marker line of the report. In the note, `@` mentions, issue references and links are put in code. The same holds for the note in the sticky comment of a pull request run. GitHub does not notify, link or close anything inside code, so a note cannot ping people or close an issue when the pull request is merged.
 
 ## Exit codes
 
@@ -55,7 +58,7 @@ The note, the stop reason and the file paths are flattened to one line each: lin
 | --- | --- |
 | 0 | The run finished and the check passed |
 | 1 | The post-run check failed (this wins over an early stop), or an unexpected error |
-| 3 | The run stopped before `finish`; the pages written so far stay and `docs/todo.md` lists what is left |
+| 3 | The run stopped before `finish`; the pages written so far stay and `docs/todo.md` lists what is left, when the model wrote a todo |
 
 ## In CI
 
@@ -70,6 +73,6 @@ The action runs `spriggs survey` and saves its output to a log. It then runs `sc
 
 Review the pages like any other change; they are a draft from the code.
 
-On exit code 3 the action still opens the pull request with the pages written so far, and the report in its body starts with the **Stopped early** reason. Then the job fails with an error that points to `docs/todo.md`. If the post-run check fails, or the survey exits with any other code, the step fails and no pull request is opened. See [the action reference](../reference/github-action.md).
+On exit code 3 the action still opens the pull request with the pages written so far, and the report in its body names the **Stopped early** reason near the top. Then the job fails with an error that points to `docs/todo.md`. If the post-run check fails, or the survey exits with any other code, the step fails and no pull request is opened. See [the action reference](../reference/github-action.md).
 
 With the workflow's own token, the repository setting **Actions → General → Allow GitHub Actions to create and approve pull requests** must be on, or GitHub refuses to open the pull request. With a GitHub App it is not needed.

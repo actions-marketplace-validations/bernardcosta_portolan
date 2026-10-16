@@ -146,7 +146,7 @@ A local run uses your working copy, posts nothing and commits nothing. The doc e
 
 - [Overview](docs/overview.md): the whole product, Spriggs and Portolan.
 - [A pull request run](docs/spriggs/pull-request-run.md): each step, the gate rules, the labels and statuses.
-- [The survey](docs/spriggs/cold-start.md): how the full check works and what its pull request contains.
+- [The survey](docs/spriggs/survey.md): how the full check works and what its pull request contains.
 - [The GitHub Action](docs/reference/github-action.md): inputs, steps and the security notes.
 - [The agent harness](docs/spriggs/agent-harness.md): the model loop, tools, budgets and providers.
 

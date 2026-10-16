@@ -60,11 +60,11 @@ What each step of a run does is in [A pull request run](spriggs/pull-request-run
 
 ## Survey: spriggs survey
 
-A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs survey` from the repository root. A separate agent explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. It leaves a `docs/todo.md` listing what it did not write or check, and the next run starts with that list. Locally nothing is committed: review the result, then commit it and open a pull request yourself. The run prints a report between the lines `--- survey result ---` and `--- end ---`, and exits with 0 (done), 1 (the post-run check failed) or 3 (stopped early; the pages so far stay).
+A pull request run only sees one diff. On a repository with no docs yet, or with docs far behind the code, run `bun run spriggs survey` from the repository root. A separate agent explores the whole repository, checks the docs against the code and writes `docs/` in the working tree. When it has finished writing, a second set of agents re-reads the pages it wrote against the code and corrects what the code does not support. When something is left to write or check, the run leaves a `docs/todo.md` listing it, and the next run starts with that list; with nothing left, it removes the page. Locally nothing is committed: review the result, then commit it and open a pull request yourself. The run prints a report between the lines `--- survey result ---` and `--- end ---`, and exits with 0 (done), 1 (the post-run check failed) or 3 (stopped early; the pages so far stay).
 
 You can also run it from the GitHub Action, which opens the pull request for you. Add `workflow_dispatch:` under `on:` in your Spriggs workflow, then open **Actions → spriggs → Run workflow**.
 
-The steps, the report, the exit codes and the pull request the action opens are in [The survey](spriggs/cold-start.md).
+The steps, the report, the exit codes and the pull request the action opens are in [The survey](spriggs/survey.md).
 
 ## Model
 
@@ -111,7 +111,7 @@ jobs:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-The `workflow_dispatch:` line lets you run the [survey](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
+The `workflow_dispatch:` line lets you run the [survey](spriggs/survey.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
 
 The `dependabot[bot]` in the `if:` line is optional for you, and it saves a runner: Dependabot pull requests get no repository secrets, so Spriggs skips them anyway.
 
@@ -138,7 +138,7 @@ This repository has three workflows:
 - `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes or for Dependabot pull requests: it is skipped when the actor is `github-actions[bot]`, `dependabot[bot]` or the App's bot, and the harness checks again.
 - `release.yml` runs on a `v*.*.*` tag. See [Release](#release).
 
-Each Spriggs run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
+A run that is not skipped or superseded posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
 
 ### Run as a GitHub App (optional)
 

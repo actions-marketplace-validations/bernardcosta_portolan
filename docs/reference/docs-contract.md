@@ -60,7 +60,7 @@ Links between pages must work. When a heading is renamed or renumbered, or a pag
 
 A relative link in a page under `docs/` must point to a file that exists and, when it points at a markdown page, to a heading on that page. The anchors are the ones GitHub gives a page: one per heading, lower case, punctuation removed, spaces turned into hyphens, with `-1`, `-2` and so on when a heading repeats, plus any `<a id>` or `<a name>`. Change entries, fenced code, inline code, HTML comments and links with a scheme (`http:`, `mailto:`) are skipped. A relative link that leaves the repository is reported.
 
-This is a check on the model, not on you. It runs when the model calls `finish`, and only for links from or to a page that run wrote, so a dead link people left elsewhere in the repository does not get in the model's way. A page the model moved or deleted counts as written, so a link to its old path is caught. The first `finish` with a dead link is refused with the list of them; a second `finish` is accepted as it is. See [Hard checks](../spriggs/agent-harness.md#hard-checks).
+This is a check on the model, not on you. It runs when the model calls `finish`. A pull request run checks only links from or to a page that run wrote, so a dead link people left elsewhere in the repository does not get in the model's way. `spriggs survey` checks every link under `docs/`, change entries and `docs/api/` aside, because the whole doc set is its job. A page the model moved or deleted counts as written, so a link to its old path is caught. The first `finish` with a dead link is refused with the list of them; a second `finish` is accepted as it is. See [Hard checks](../spriggs/agent-harness.md#hard-checks).
 
 ## portolan.yml
 
@@ -74,7 +74,7 @@ Known keys:
 
 | Key | Type | Notes |
 | --- | --- | --- |
-| `name` | string | Required, not empty. |
+| `name` | string | Required, not empty. Spriggs puts it in the survey message. |
 | `repo` | string | Optional. Must be a string when set. |
 | `owner` | string | Optional. Must be a string when set. |
 | `issues.pattern` | regular expression | Optional. How Spriggs finds linked issue IDs in the title and description. Default `#\d+`. Must be a valid regular expression. |
@@ -82,7 +82,9 @@ Known keys:
 | `chat.url` | string | Optional. |
 | `specs` | list of strings | Optional. |
 
-Unknown keys are kept as they are, so people can add their own fields. A file that does not parse, is not a mapping, or breaks one of the rules above makes Spriggs print a warning at the start of a run. If the model writes such a file, the write is refused.
+Unknown keys are kept as they are, so people can add their own fields. Spriggs checks the file whenever it writes it, and at the start of every run, where a problem is only a warning on the console. It reports a file that does not parse, a file that is not a mapping, a missing or empty `name`, a `repo` or `owner` that is not a string, and an `issues.pattern` that is not a valid regular expression.
+
+Of the keys above, Spriggs reads two today: `name` and `issues.pattern`. The others are kept as they are and read by nothing yet. If the model writes a file that fails one of the checks, the write is refused.
 
 ## Change entries
 
@@ -118,7 +120,7 @@ After the model finishes, Spriggs checks every file it changed, including the pa
 
 - a changed file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
 - a markdown page has missing or invalid frontmatter;
-- `docs/portolan.yml` breaks the rules above;
+- `docs/portolan.yml` fails one of the checks above;
 - the docs edits add up to more than 1,500 changed lines (pull request runs only; `spriggs survey` has no cap). A deletion adds no lines, and a page moved without other changes adds none either, so moving a long page does not fail the cap;
 - in CI, on a pull request run, any other file in the working tree changed.
 
