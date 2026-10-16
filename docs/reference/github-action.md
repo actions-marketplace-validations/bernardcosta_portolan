@@ -33,7 +33,7 @@ All inputs are optional. Each one becomes an environment variable for the step t
 | `app-private-key` | empty | (mints a token) | The App's private key (PEM). |
 | `max-lines` | empty (5000) | `SPRIGGS_MAX_LINES` | Changed lines above which Spriggs asks to split the pull request. |
 
-Other settings, such as `SPRIGGS_CONTEXT_TOKENS`, `SPRIGGS_BLOCKING` or `SPRIGGS_SURVEY_TOKENS`, go under `env:` on the step. See [configuration.md](configuration.md).
+Other settings, such as `SPRIGGS_BLOCKING` or `SPRIGGS_SURVEY_TOKENS`, go under `env:` on the step. See [configuration.md](configuration.md).
 
 ## Steps
 

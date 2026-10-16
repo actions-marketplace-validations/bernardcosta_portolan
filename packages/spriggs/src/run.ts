@@ -137,7 +137,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   } catch (e) {
     if (e instanceof ContextWindowError) {
       return fail(
-        `This change does not fit the context window of ${provider.model}. Use a model with a larger window, lower SPRIGGS_CONTEXT_TOKENS so older tool results are cleared sooner, or split the pull request.`,
+        `This change does not fit the context window of ${provider.model}. Use a model with a larger window, or split the pull request.`,
       );
     }
     return fail("The agent run failed:", undefined, e);

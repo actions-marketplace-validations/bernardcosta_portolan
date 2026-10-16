@@ -24,7 +24,7 @@ All model work goes through one loop (`agent/loop.ts`). An **agent** (`agent/age
 | `survey` | `spriggs survey` | `list_files`, `search`, `read_file`, `write_doc`, `move_doc`, `delete_doc`, `finish` | 120 | 2,000,000 (`SPRIGGS_SURVEY_TOKENS`) | 45 min | yes |
 | `verify` | `spriggs survey`, the check pass | `list_files`, `search`, `read_file`, `write_doc`, `finish` | 60 | 1,000,000 | 20 min | yes |
 
-Tokens count input not served from the provider's cache, plus output. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
+Tokens count input not served from the provider's cache, plus output. Cached input is left out of the budget, but it is billed and shows in the reported cost. The history can grow to the model's full context window before anything is cleared, so a model with a larger window raises the worst-case cost of a run: a pull request author can drive any run toward `turns × window` cached tokens. Choose the model with that in mind. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
 
 The `verify` budget is per checker, and up to three checkers run at the same time, so the check pass of one survey may spend several times that. See [The check pass](#the-check-pass).
 
@@ -40,7 +40,7 @@ The console log shows each turn: the turn number and the model's text, then one 
 - **No tool call.** If the model stops without calling a tool and has not finished, it is told once to call `finish`. A second time ends the run.
 - **Hard checks.** A tool call for `finish` that succeeds is held while the run's checks are run over the docs (see [Hard checks](#hard-checks)). The first `finish` with problems is refused and its result thrown away; a second `finish` is accepted as it is.
 - **Seen files.** A file counts as seen when its diff was inline, or a `read_diff` or `read_file` call on it succeeded and was not cut.
-- **Context clearing.** When one request goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window; about 120,000 suits a 200K-token window), tool results older than the last three tool turns are replaced with a short note. Call IDs and order stay, so the model can call the tool again. The console logs `context: cleared N older tool result(s)`.
+- **Context clearing.** When the provider rejects a request because it does not fit the model's context window, tool results older than the last three tool turns are replaced with a short note and the request is sent again. Call IDs and order stay, so the model can call the tool again. This works for any window size, and the prompt cache breaks only when a clear happens. The console logs `context: cleared N older tool result(s)`. A request the provider billed before it stopped at the window's edge still counts toward the budget and the cost. If there is nothing left to clear, the time budget is spent, or the second request still does not fit, the run fails.
 - A call to a tool the agent does not have is refused.
 
 ## The check pass
@@ -84,7 +84,7 @@ The three tools that change a page under `docs/` (`write_doc`, `move_doc` and `d
 
 A provider implements one method, `complete({ system, turns, tools, maxTokens })`, and returns the text, tool calls, usage (input, output, cached), the stop reason and the raw assistant message. The raw message is sent back unchanged on the next request.
 
-- `AnthropicProvider` uses the Messages API with strict tool schemas. It marks the system prompt, the first user message and the last message as cache points, so each turn reuses the earlier ones. A "prompt is too long" error, or a reply stopped because the context window filled up, becomes a `ContextWindowError`. A refusal becomes an error.
+- `AnthropicProvider` uses the Messages API with strict tool schemas. It marks the system prompt, the first user message and the last message as cache points, so each turn reuses the earlier ones. An error whose text says the prompt is too long or names the context window becomes a `ContextWindowError`; the older wording, `input length and max_tokens exceed context limit`, is matched too. A reply that stops because the context window filled up becomes one as well, and that error carries the usage it was billed for, so the loop counts it before it clears and retries. A refusal becomes an error.
 - `OpenAIProvider` uses Chat Completions with strict function tools. It also serves `openrouter/` with the base URL `https://openrouter.ai/api/v1`. Context-length errors become a `ContextWindowError`. Tool errors are sent as `ERROR: <message>`.
 
 Both clients use a five-minute request timeout. To add a provider, implement the `Provider` interface in `agent/providers/types.ts` and add a case in `model.ts`.

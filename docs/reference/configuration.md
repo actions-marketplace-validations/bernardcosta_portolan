@@ -4,7 +4,6 @@ covers:
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/agents.ts
-  - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/run.ts
   - packages/spriggs/src/forge/github.ts
@@ -43,7 +42,6 @@ An unknown command prints the usage and exits with code 2. An unexpected error p
 | `OPENROUTER_API_KEY` | none | `agent/model.ts` | Key for `openrouter/<vendor>/<model>` models, sent to OpenRouter's OpenAI-style endpoint. |
 | `SPRIGGS_MAX_LINES` | 5000 | `gate/decide.ts` | Changed lines above which a pull request run writes nothing and asks to split the change. |
 | `SPRIGGS_BLOCKING` | not set | `run.ts` | When `true`, a gate stop sets the `spriggs` status to `failure`. Breaking changes do that anyway. |
-| `SPRIGGS_CONTEXT_TOKENS` | 600000 | `agent/loop.ts` | Input tokens per request above which older tool results are cleared. About 120000 suits a 200K-token model. |
 | `SPRIGGS_SURVEY_TOKENS` | 2000000 | `agent/agents.ts` | Token cap of the `survey` agent. |
 | `GITHUB_TOKEN` | none | `forge/github.ts` | Required for `run` without `--local`. Used for the comment, label, status and push. |
 | `GITHUB_EVENT_PATH` | set by GitHub Actions | `forge/github.ts` | Required for `run` without `--local`. Must point to a `pull_request` event. |

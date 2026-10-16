@@ -1,18 +1,24 @@
 import { type HardCheck, runHardChecks } from "../checks";
 import { flat } from "../report";
 import type { Agent } from "./agents";
-import type { Provider, Turn, Usage } from "./providers/types";
+import {
+  type Completion,
+  ContextWindowError,
+  type Provider,
+  type Turn,
+  type Usage,
+} from "./providers/types";
 import { type FinishResult, runTool, safeRel, type ToolRuntime, toolDefs } from "./tools";
 
 /** The most the model may write in one reply: about 90 KB of text, enough for several whole pages. */
 const MAX_OUTPUT_TOKENS = 32_000;
 
 /**
- * When one request grows past this many input tokens, the contents of older tool results are cleared
- * from the history (the model can read a file again). The last few tool turns stay intact.
- * `SPRIGGS_CONTEXT_TOKENS` sets it; the default suits a 1M window. Set about 120000 for a 200K model.
+ * When a request does not fit the model's context window, the contents of older tool results are
+ * cleared from the history (the model can read a file again) and the request is sent again. The last
+ * few tool turns stay intact. Clearing only then works for any window size, and the prompt cache breaks
+ * only when a clear happens.
  */
-const CONTEXT_SOFT_LIMIT = Number(process.env.SPRIGGS_CONTEXT_TOKENS) || 600_000;
 const KEEP_RECENT_TOOL_TURNS = 3;
 const CLEARED = "[cleared to save context; call the tool again if you need this content]";
 /** The share of any budget line after which an agent with a `nearBudget` message gets it, once. */
@@ -81,17 +87,19 @@ export async function runAgent(opts: {
       console.log("  budget: nearly spent; told the model to wrap up");
     }
 
-    const c = await opts.provider.complete({
-      system: agent.system,
-      turns,
-      tools,
-      maxTokens: MAX_OUTPUT_TOKENS,
-    });
-    usage.input += c.usage.input;
-    usage.output += c.usage.output;
-    usage.cached += c.usage.cached;
+    const request = () =>
+      opts.provider.complete({ system: agent.system, turns, tools, maxTokens: MAX_OUTPUT_TOKENS });
+    let c: Completion;
+    try {
+      c = await request();
+    } catch (e) {
+      if (!(e instanceof ContextWindowError)) throw e;
+      if (e.usage) addUsage(usage, e.usage);
+      if (Date.now() - started > budget.timeoutMs || !clearOldToolResults(turns)) throw e;
+      c = await request();
+    }
+    addUsage(usage, c.usage);
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
-    if (c.usage.input > CONTEXT_SOFT_LIMIT) clearOldToolResults(turns);
     // Model text and file names come from the repository: one line each, never starting with `::`
     // (the CI runner would read that as a workflow command).
     const said = clip(flat(c.text), 400);
@@ -159,8 +167,17 @@ export async function runAgent(opts: {
   throw new AgentError(`agent loop hit the ${budget.maxTurns} turn limit without finishing`, usage);
 }
 
-/** Replaces the content of tool results older than the last few tool turns. Ids and order stay. */
-function clearOldToolResults(turns: Turn[]): void {
+function addUsage(total: Usage, u: Usage): void {
+  total.input += u.input;
+  total.output += u.output;
+  total.cached += u.cached;
+}
+
+/**
+ * Replaces the content of tool results older than the last few tool turns. Ids and order stay.
+ * Returns the number cleared.
+ */
+function clearOldToolResults(turns: Turn[]): number {
   const toolTurns = turns.filter((t) => t.role === "tool");
   let cleared = 0;
   for (const t of toolTurns.slice(0, -KEEP_RECENT_TOOL_TURNS)) {
@@ -173,6 +190,7 @@ function clearOldToolResults(turns: Turn[]): void {
     }
   }
   if (cleared) console.log(`  context: cleared ${cleared} older tool result(s)`);
+  return cleared;
 }
 
 /** A tool call for the log: the name and its main argument. */
