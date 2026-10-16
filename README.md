@@ -22,9 +22,9 @@ Portolan, the hub that publishes those docs for people and agents, comes later. 
 
 ## Quick start
 
-**1. Add a model key** as a repository secret, for example `ANTHROPIC_API_KEY`.
+**1. Add a model key** as a repository secret: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`, for the provider you choose.
 
-**2. Add the workflow** as `.github/workflows/spriggs.yml`:
+**2. Add the workflow** as `.github/workflows/spriggs.yml`. Change `model` to the one you want (see [Models](#models)):
 
 ```yaml
 name: spriggs
@@ -47,7 +47,12 @@ jobs:
     steps:
       - uses: bernardcosta/portolan@v1
         with:
+          # provider/model: anthropic/<model>, openai/<model> or openrouter/<vendor>/<model>.
+          model: anthropic/claude-opus-5-5
+          # Add the secret of the provider you use. The others stay empty.
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 You need no checkout step, because the action checks out the pull request itself. Use `pull_request`, never `pull_request_target`.

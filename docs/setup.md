@@ -80,7 +80,7 @@ A missing model or key fails the run before any network call, naming the missing
 
 ## Use Spriggs in another repository
 
-Spriggs is a GitHub Action. The `action.yml` at the root of this repository is the action; it checks out the pull request, installs Bun and Spriggs's dependencies, and runs the harness. Add this workflow to the repository as `.github/workflows/spriggs.yml`, and add the secret `ANTHROPIC_API_KEY` (or the key of the provider you choose):
+Spriggs is a GitHub Action. The `action.yml` at the root of this repository is the action; it checks out the pull request, installs Bun and Spriggs's dependencies, and runs the harness. Add this workflow to the repository as `.github/workflows/spriggs.yml`, set `model`, and add the secret of that model's provider (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`):
 
 ```yaml
 name: spriggs
@@ -103,7 +103,12 @@ jobs:
     steps:
       - uses: bernardcosta/portolan@v1
         with:
+          # provider/model: anthropic/<model>, openai/<model> or openrouter/<vendor>/<model>.
+          model: anthropic/claude-opus-5-5
+          # Add the secret of the provider you use. The others stay empty.
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 The `workflow_dispatch:` line lets you run the [survey](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
