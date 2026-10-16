@@ -115,7 +115,7 @@ The `workflow_dispatch:` line lets you run the [survey](spriggs/survey.md#in-ci)
 
 The `dependabot[bot]` in the `if:` line is optional for you, and it saves a runner: Dependabot pull requests get no repository secrets, so Spriggs skips them anyway.
 
-The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
+The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
 
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 

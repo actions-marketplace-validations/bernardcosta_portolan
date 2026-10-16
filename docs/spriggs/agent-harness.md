@@ -40,7 +40,7 @@ The console log shows each turn: the turn number and the model's text, then one 
 - **No tool call.** If the model stops without calling a tool and has not finished, it is told once to call `finish`. A second time ends the run.
 - **Hard checks.** A tool call for `finish` that succeeds is held while the run's checks are run over the docs (see [Hard checks](#hard-checks)). The first `finish` with problems is refused and its result thrown away; a second `finish` is accepted as it is.
 - **Seen files.** A file counts as seen when its diff was inline, or a `read_diff` or `read_file` call on it succeeded and was not cut.
-- **Context clearing.** When one request goes over `SPRIGGS_CONTEXT_TOKENS` input tokens (default 600,000, which suits a model with a 1M-token window; about 120,000 suits a 200K-token window), tool results older than the last three tool turns are replaced with a short note. Call IDs and order stay, so the model can call the tool again. The console logs `context: cleared N older tool result(s)`.
+- **Context clearing.** When the provider rejects a request because it does not fit the model's context window, tool results older than the last three tool turns are replaced with a short note and the request is sent again. Call IDs and order stay, so the model can call the tool again. This works for any window size, and the prompt cache breaks only when a clear happens. The console logs `context: cleared N older tool result(s)`. If there is nothing left to clear, the run fails.
 - A call to a tool the agent does not have is refused.
 
 ## The check pass

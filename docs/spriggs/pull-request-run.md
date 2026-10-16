@@ -97,7 +97,7 @@ The model is told to edit existing pages in place. It creates a new page only wh
 
 After the run, Spriggs counts which changed files the model saw (inline, or read with `read_diff` or `read_file`; a `read_diff` result cut at 64 KB does not count) and logs `coverage: read N/M`.
 
-If the conversation no longer fits the model's context window, the provider rejects the request; nothing is cut. The run fails with a message that says the change does not fit. To fix it, use a model with a larger window, lower `SPRIGGS_CONTEXT_TOKENS` so older tool results are cleared sooner (see [agent-harness.md](agent-harness.md#the-loop)), or split the pull request. A run that runs out of turns, tokens or time before `finish` also fails.
+If the conversation no longer fits the model's context window, the provider rejects the request; nothing is cut. Spriggs clears older tool results and sends it again (see [agent-harness.md](agent-harness.md#the-loop)). If it still does not fit, the run fails with a message that says the change does not fit. To fix it, use a model with a larger window, or split the pull request. A run that runs out of turns, tokens or time before `finish` also fails.
 
 ## 7. Post-run check
 
