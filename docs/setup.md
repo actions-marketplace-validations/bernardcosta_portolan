@@ -161,6 +161,9 @@ When `app-id` is set, the action mints a one-hour token from the key before each
 
 ```
 action.yml          the GitHub Action other repositories use
+README.md           the readme for new users: quick start, models, safety, the docs layout
+LICENSE             Apache-2.0
+SECURITY.md         how to report a vulnerability privately
 scripts/            open-survey-pr.sh (commits docs/ and opens the pull request after a survey run in CI),
                     bunfig.toml (empty on purpose; the action points Bun at it)
 packages/spriggs/   the harness and the `portolan` CLI
@@ -176,7 +179,7 @@ Releases follow semantic versioning. Users call the action with the major tag (`
 
 1. In a pull request, set `version` in `packages/spriggs/package.json` to the new version, for example `1.1.0`, or `1.1.0-rc.1` for a pre-release. Merge it.
 2. Tag the merge commit on `main` and push the tag: `git tag v1.1.0 && git push origin v1.1.0`.
-3. The `release` workflow fails if the tag and the package version differ, or if the tagged commit is not on `main` (where `ci` already ran the checks). Otherwise it publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
+3. The `release` workflow fails if the tag and the package version differ, or if the tagged commit is not on `main` (where `ci` already ran the checks). Otherwise it publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release; the first release of a major line creates it, because there is no major tag yet. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
 
 Tag only the newest version of a major line: a full release always moves the major tag to itself, so tagging an older patch would move `v1` backwards. The release job runs no install and no third-party code, because it holds a write token and moves the tag that every user runs. If moving the major tag fails, the release is published and the job fails; move `v1` by hand.
 
