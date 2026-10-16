@@ -38,10 +38,12 @@ Other settings, such as `SPRIGGS_CONTEXT_TOKENS`, `SPRIGGS_BLOCKING` or `SPRIGGS
 1. **Check out** the pull request's head commit (not the merge commit), with full history so Spriggs can find the merge base. Credentials are not saved in the checkout. On `workflow_dispatch` there is no pull request, so the commit the workflow ran on is used.
 2. **Install Bun** 1.3.11.
 3. **Install Spriggs** in the action's own folder: `bun install --frozen-lockfile --production`.
-4. **Mint an App token**, only when `app-id` is set and the event is not a pull request from a fork (forks get no secrets). It uses `actions/create-github-app-token@v2`. The token replaces `github-token`, and the App's slug goes to Spriggs as `SPRIGGS_APP_SLUG`.
+4. **Mint an App token**, only when `app-id` is set and the event is not a pull request from a fork (forks get no secrets). It uses `actions/create-github-app-token`, pinned to a commit SHA of v2.2.2. The token replaces `github-token`, and the App's slug goes to Spriggs as `SPRIGGS_APP_SLUG`.
 5. **Run Spriggs.** The step picks the command, then runs `spriggs run` or `spriggs survey`. For `survey`, the output is also saved to a log file in the runner's temporary folder. Exit codes 0 and 3 let the job go on; any other code fails the step.
 6. **Open the docs pull request**, only for `survey`. It runs `scripts/open-survey-pr.sh`. See [cold-start.md](../spriggs/cold-start.md#in-ci).
 7. **Report an early stop**, only when `survey` exited with 3. It prints an error that points to `docs/todo.md` and fails the job, after the pull request was opened.
+
+The third-party actions the step uses (`actions/checkout`, `oven-sh/setup-bun`, `actions/create-github-app-token`) are pinned to a full commit SHA, with the version in a comment. Dependabot proposes the updates (see [Release](../setup.md#release)).
 
 ## Bun settings from the repository are ignored
 

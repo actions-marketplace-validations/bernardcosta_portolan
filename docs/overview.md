@@ -3,6 +3,7 @@ summary: Portolan keeps a repo's docs accurate on every pull request and publish
 covers:
   - action.yml
   - .github/workflows/spriggs.yml
+  - .github/workflows/release.yml
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/survey.ts
 ---
@@ -39,4 +40,4 @@ In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a s
 
 ## Owner
 
-bernardcosta.
+bernardcosta. The project is under the Apache-2.0 license. To report a vulnerability, follow `SECURITY.md` in the repository root; do not open a public issue.

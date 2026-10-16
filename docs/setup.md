@@ -8,6 +8,8 @@ covers:
   - packages/spriggs/src/agent/model.ts
   - .github/workflows/ci.yml
   - .github/workflows/spriggs.yml
+  - .github/workflows/release.yml
+  - .github/dependabot.yml
   - .env.example
   - action.yml
   - scripts/open-survey-pr.sh
@@ -106,6 +108,8 @@ jobs:
 
 The `workflow_dispatch:` line lets you run the [survey](spriggs/cold-start.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
 
+The `dependabot[bot]` in the `if:` line is optional for you, and it saves a runner: Dependabot pull requests get no repository secrets, so Spriggs skips them anyway.
+
 The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
 
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
@@ -123,10 +127,11 @@ If you use a GitHub App, you can also skip the job on the App's own pushes by ad
 
 ## CI
 
-This repository has two workflows:
+This repository has three workflows:
 
 - `ci.yml` runs `bun run check` and `bun run typecheck` on pull requests and on pushes to `main`.
-- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes: it is skipped when the actor is `github-actions[bot]` or the App's bot, and the harness checks again.
+- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes or for Dependabot pull requests: it is skipped when the actor is `github-actions[bot]`, `dependabot[bot]` or the App's bot, and the harness checks again.
+- `release.yml` runs on a `v*.*.*` tag. See [Release](#release).
 
 Each Spriggs run posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
 
@@ -168,7 +173,7 @@ Releases follow semantic versioning. Users call the action with the major tag (`
 2. Tag the merge commit on `main` and push the tag: `git tag v1.1.0 && git push origin v1.1.0`.
 3. The `release` workflow fails if the tag and the package version differ, or if the tagged commit is not on `main` (where `ci` already ran the checks). Otherwise it publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
 
-Tag only the newest version of a major line: a full release always moves the major tag to itself, so tagging an older patch would move `v1` backwards. The release job runs no install and no third-party code, because it holds a write token and moves the tag that every user runs.
+Tag only the newest version of a major line: a full release always moves the major tag to itself, so tagging an older patch would move `v1` backwards. The release job runs no install and no third-party code, because it holds a write token and moves the tag that every user runs. If moving the major tag fails, the release is published and the job fails; move `v1` by hand.
 
 A breaking change to the action's inputs, labels or the docs contract needs a new major version (`v2`).
 
