@@ -1,4 +1,4 @@
-name: Spriggs
+name: Spriggs AI Docs
 description: Keeps docs/ in step with the code on every pull request. Edits the docs, writes a change entry, commits to the branch.
 author: bernardcosta
 branding:
