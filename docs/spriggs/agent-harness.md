@@ -24,7 +24,7 @@ All model work goes through one loop (`agent/loop.ts`). An **agent** (`agent/age
 | `survey` | `spriggs survey` | `list_files`, `search`, `read_file`, `write_doc`, `move_doc`, `delete_doc`, `finish` | 120 | 2,000,000 (`SPRIGGS_SURVEY_TOKENS`) | 45 min | yes |
 | `verify` | `spriggs survey`, the check pass | `list_files`, `search`, `read_file`, `write_doc`, `finish` | 60 | 1,000,000 | 20 min | yes |
 
-Tokens count input not served from the provider's cache, plus output. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
+Tokens count input not served from the provider's cache, plus output. Cached input is left out of the budget, but it is billed and shows in the reported cost. The history can grow to the model's full context window before anything is cleared, so a model with a larger window raises the worst-case cost of a run: a pull request author can drive any run toward `turns × window` cached tokens. Choose the model with that in mind. The budget is checked only between turns, so the action's workflow keeps a 60-minute job timeout as a backstop.
 
 The `verify` budget is per checker, and up to three checkers run at the same time, so the check pass of one survey may spend several times that. See [The check pass](#the-check-pass).
 
@@ -40,7 +40,7 @@ The console log shows each turn: the turn number and the model's text, then one 
 - **No tool call.** If the model stops without calling a tool and has not finished, it is told once to call `finish`. A second time ends the run.
 - **Hard checks.** A tool call for `finish` that succeeds is held while the run's checks are run over the docs (see [Hard checks](#hard-checks)). The first `finish` with problems is refused and its result thrown away; a second `finish` is accepted as it is.
 - **Seen files.** A file counts as seen when its diff was inline, or a `read_diff` or `read_file` call on it succeeded and was not cut.
-- **Context clearing.** When the provider rejects a request because it does not fit the model's context window, tool results older than the last three tool turns are replaced with a short note and the request is sent again. Call IDs and order stay, so the model can call the tool again. This works for any window size, and the prompt cache breaks only when a clear happens. The console logs `context: cleared N older tool result(s)`. If there is nothing left to clear, the run fails.
+- **Context clearing.** When the provider rejects a request because it does not fit the model's context window, tool results older than the last three tool turns are replaced with a short note and the request is sent again. Call IDs and order stay, so the model can call the tool again. This works for any window size, and the prompt cache breaks only when a clear happens. The console logs `context: cleared N older tool result(s)`. A request the provider billed before it stopped at the window's edge still counts toward the budget and the cost. If there is nothing left to clear, the time budget is spent, or the second request still does not fit, the run fails.
 - A call to a tool the agent does not have is refused.
 
 ## The check pass

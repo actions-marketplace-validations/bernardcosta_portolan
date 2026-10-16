@@ -16,7 +16,8 @@ const MAX_OUTPUT_TOKENS = 32_000;
 /**
  * When a request does not fit the model's context window, the contents of older tool results are
  * cleared from the history (the model can read a file again) and the request is sent again. The last
- * few tool turns stay intact. Clearing only then works for any window size and breaks the cache once.
+ * few tool turns stay intact. Clearing only then works for any window size, and the prompt cache breaks
+ * only when a clear happens.
  */
 const KEEP_RECENT_TOOL_TURNS = 3;
 const CLEARED = "[cleared to save context; call the tool again if you need this content]";
@@ -92,12 +93,12 @@ export async function runAgent(opts: {
     try {
       c = await request();
     } catch (e) {
-      if (!(e instanceof ContextWindowError) || !clearOldToolResults(turns)) throw e;
+      if (!(e instanceof ContextWindowError)) throw e;
+      if (e.usage) addUsage(usage, e.usage);
+      if (Date.now() - started > budget.timeoutMs || !clearOldToolResults(turns)) throw e;
       c = await request();
     }
-    usage.input += c.usage.input;
-    usage.output += c.usage.output;
-    usage.cached += c.usage.cached;
+    addUsage(usage, c.usage);
     turns.push({ role: "assistant", text: c.text, calls: c.calls, raw: c.raw });
     // Model text and file names come from the repository: one line each, never starting with `::`
     // (the CI runner would read that as a workflow command).
@@ -164,6 +165,12 @@ export async function runAgent(opts: {
   }
   if (rt.finished) return { result: rt.finished, usage, turns: turns.length, seen };
   throw new AgentError(`agent loop hit the ${budget.maxTurns} turn limit without finishing`, usage);
+}
+
+function addUsage(total: Usage, u: Usage): void {
+  total.input += u.input;
+  total.output += u.output;
+  total.cached += u.cached;
 }
 
 /**

@@ -27,9 +27,16 @@ export type Completion = {
   raw: unknown;
 };
 
-/** The request was larger than the model's context window. The provider rejected it; nothing was cut. */
+/**
+ * The request was larger than the model's context window. The provider rejected it; nothing was cut.
+ * `usage` is set when the provider still billed the request (a reply stopped at the window's edge).
+ */
 export class ContextWindowError extends Error {
-  constructor(model: string, detail: string) {
+  constructor(
+    model: string,
+    detail: string,
+    readonly usage?: Usage,
+  ) {
     super(`the conversation no longer fits the context window of ${model} (${detail})`);
     this.name = "ContextWindowError";
   }

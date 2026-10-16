@@ -40,14 +40,22 @@ export class AnthropicProvider implements Provider {
       .catch((e: unknown) => {
         if (
           e instanceof Anthropic.BadRequestError &&
-          /prompt is too long|context window/i.test(e.message)
+          /prompt is too long|context window|exceed context limit/i.test(e.message)
         ) {
           throw new ContextWindowError(this.model, e.message);
         }
         throw e;
       });
+    const usage = {
+      input:
+        response.usage.input_tokens +
+        (response.usage.cache_read_input_tokens ?? 0) +
+        (response.usage.cache_creation_input_tokens ?? 0),
+      output: response.usage.output_tokens,
+      cached: response.usage.cache_read_input_tokens ?? 0,
+    };
     if (response.stop_reason === "model_context_window_exceeded") {
-      throw new ContextWindowError(this.model, "the reply did not fit");
+      throw new ContextWindowError(this.model, "the reply did not fit", usage);
     }
     if (response.stop_reason === "refusal") {
       throw new Error(`model refused: ${response.stop_details?.category ?? "unknown category"}`);
@@ -60,14 +68,7 @@ export class AnthropicProvider implements Provider {
       calls: response.content
         .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
         .map((b) => ({ id: b.id, name: b.name, input: b.input })),
-      usage: {
-        input:
-          response.usage.input_tokens +
-          (response.usage.cache_read_input_tokens ?? 0) +
-          (response.usage.cache_creation_input_tokens ?? 0),
-        output: response.usage.output_tokens,
-        cached: response.usage.cache_read_input_tokens ?? 0,
-      },
+      usage,
       stop: response.stop_reason ?? "unknown",
       raw: response.content,
     };
