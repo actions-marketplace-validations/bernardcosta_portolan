@@ -1,4 +1,4 @@
-name: Spriggs
+name: Spriggs AI Docs
 description: Keeps docs/ in step with the code on every pull request. Edits the docs, writes a change entry, commits to the branch.
 author: bernardcosta
 branding:
@@ -46,7 +46,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # The head commit, not the merge commit. Full history for the diff and the merge base.
         ref: ${{ github.event.pull_request.head.sha }}
@@ -61,9 +61,10 @@ runs:
     - id: app
       # A fork has no secrets, so no token can be minted for it; Spriggs skips forks anyway.
       if: inputs.app-id != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
       with:
-        app-id: ${{ inputs.app-id }}
+        # v3 deprecates its app-id input. client-id takes the App ID or the Client ID; both name the App.
+        client-id: ${{ inputs.app-id }}
         private-key: ${{ inputs.app-private-key }}
     - name: Run Spriggs
       id: spriggs
