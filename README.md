@@ -1,6 +1,8 @@
 # Portolan
 
-**Docs that keep up with the code.** Spriggs is a GitHub Action that reads every pull request, updates your repository's `docs/` folder to match, and commits the change to the same branch. Reviewers see the doc changes beside the code, before the merge.
+**Docs that keep up with the code.** Spriggs is an AI doc harness: an agent that runs in CI on every pull request. It reads the change, updates your repository's `docs/` folder to match, and commits the edits to the same branch. No one has to remember to update the docs. Reviewers see the doc changes beside the code, before the merge.
+
+Spriggs runs its own agent loop against the model you choose: Anthropic, OpenAI, or any model on OpenRouter. A gate runs first. When a change has no reason, Spriggs asks for one instead of inventing it. The agent gets a small set of tools that can read the repository and write only under `docs/`.
 
 Portolan, the hub that publishes those docs for people and agents, comes later. This repository holds both.
 
