@@ -99,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: bernardcosta/portolan@main
+      - uses: bernardcosta/portolan@v1
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -111,7 +111,7 @@ The action's inputs (`command`, `model`, the provider keys, `github-token`, `app
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 
 ```yaml
-      - uses: bernardcosta/portolan@main
+      - uses: bernardcosta/portolan@v1
         with:
           model: openrouter/google/gemini-2.5-pro
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
@@ -158,8 +158,21 @@ scripts/            open-survey-pr.sh (commits docs/ and opens the pull request 
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
 .github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests and the survey
-                    by hand, through action.yml)
+                    by hand, through action.yml), release.yml (a release on each version tag)
+.github/dependabot.yml  weekly updates for the pinned actions and the Bun dependencies
 ```
+
+## Release
+
+Releases follow semantic versioning. Users call the action with the major tag (`@v1`), which always points to the latest `v1.x.x` release.
+
+1. In a pull request, set `version` in `packages/spriggs/package.json` to the new version, for example `1.1.0`. Merge it.
+2. Tag the merge commit on `main` and push the tag: `git tag v1.1.0 && git push origin v1.1.0`.
+3. The `release` workflow runs the checks, fails if the tag and the package version differ, and publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
+
+A breaking change to the action's inputs, labels or the docs contract needs a new major version (`v2`).
+
+The actions that `action.yml` and the workflows use are pinned to full commit SHAs, with the version in a comment. Dependabot proposes the updates. Dependabot pull requests do not start the `spriggs` job, because they get no repository secrets.
 
 ## Pull requests
 

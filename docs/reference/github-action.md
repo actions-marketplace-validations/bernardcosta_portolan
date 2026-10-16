@@ -9,7 +9,7 @@ covers:
 
 # The GitHub Action
 
-`action.yml` at the root of this repository is the action. Other repositories call it with `uses: bernardcosta/portolan@main`. This repository calls it from its own checkout with `uses: ./` in `.github/workflows/spriggs.yml`. For a ready-to-copy workflow and the GitHub App setup, see [setup.md](../setup.md#use-spriggs-in-another-repository).
+`action.yml` at the root of this repository is the action. Other repositories call it with `uses: bernardcosta/portolan@v1`, which follows the latest `v1.x.x` release, or with a full commit SHA to pin one exact release (see [Release](../setup.md#release)). This repository calls it from its own checkout with `uses: ./` in `.github/workflows/spriggs.yml`. For a ready-to-copy workflow and the GitHub App setup, see [setup.md](../setup.md#use-spriggs-in-another-repository).
 
 It is a composite action. It needs the workflow permissions `contents: write`, `pull-requests: write` and `statuses: write`.
 

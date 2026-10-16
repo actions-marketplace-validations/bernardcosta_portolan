@@ -25,7 +25,7 @@ Early development. Spriggs is built first and runs on this repo's own pull reque
 
 ## How to call it
 
-In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a step `uses: bernardcosta/portolan@main` and a provider key. The event picks the command: a pull request runs the normal check, and a start by hand (`workflow_dispatch`) runs the survey and opens a pull request with the new docs. The action's `command` input forces one or the other. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). Survey: `bun run spriggs survey` (`portolan spriggs survey`). See [setup.md](setup.md).
+In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a step `uses: bernardcosta/portolan@v1` and a provider key. The event picks the command: a pull request runs the normal check, and a start by hand (`workflow_dispatch`) runs the survey and opens a pull request with the new docs. The action's `command` input forces one or the other. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). Survey: `bun run spriggs survey` (`portolan spriggs survey`). See [setup.md](setup.md).
 
 ## Read next
 
