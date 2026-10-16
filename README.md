@@ -97,7 +97,7 @@ With the default token, Spriggs commits as `github-actions[bot]`, and GitHub doe
 
 ## The docs layout
 
-Spriggs keeps a small fixed spine in `docs/`. Everything else is up to you.
+`docs/` has a small fixed spine. These names are always the same, so people, tools and the Portolan hub can find them in any repository:
 
 ```
 docs/
@@ -107,6 +107,8 @@ docs/
   changes/       one entry per pull request, written by Spriggs
   api/           generated API specs, never edited by hand
 ```
+
+Everything else in `docs/` is free. You and Spriggs can add any pages and folders the project needs, at most two folders deep (for example `docs/guides/deploy.md` or `docs/guides/cloud/aws.md`). Spriggs creates a new page or folder when a change adds something that needs one. When code is renamed or moved, it moves the matching page to fit. When code is removed, it deletes the page about it. The survey also moves sections to the page where they belong and removes a page that only repeats another. Spriggs never renames or deletes the spine, and it never edits `api/`. Pages you write by hand are kept and edited like any other page.
 
 Every page starts with a short frontmatter block that has a one-line `summary`. The full rules are in [the docs contract](docs/reference/docs-contract.md). You do not need a `docs/` folder to start. Run the survey once for a first full set of pages. After that, each pull request run adds only what its change needs.
 
