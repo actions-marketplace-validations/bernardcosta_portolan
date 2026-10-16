@@ -8,6 +8,8 @@ covers:
   - packages/spriggs/src/agent/model.ts
   - .github/workflows/ci.yml
   - .github/workflows/spriggs.yml
+  - .github/workflows/release.yml
+  - .github/dependabot.yml
   - .env.example
   - action.yml
   - scripts/open-survey-pr.sh
@@ -78,7 +80,7 @@ A missing model or key fails the run before any network call, naming the missing
 
 ## Use Spriggs in another repository
 
-Spriggs is a GitHub Action. The `action.yml` at the root of this repository is the action; it checks out the pull request, installs Bun and Spriggs's dependencies, and runs the harness. Add this workflow to the repository as `.github/workflows/spriggs.yml`, and add the secret `ANTHROPIC_API_KEY` (or the key of the provider you choose):
+Spriggs is a GitHub Action. The `action.yml` at the root of this repository is the action; it checks out the pull request, installs Bun and Spriggs's dependencies, and runs the harness. Add this workflow to the repository as `.github/workflows/spriggs.yml`, set `model`, and add the secret of that model's provider (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`):
 
 ```yaml
 name: spriggs
@@ -95,40 +97,46 @@ permissions:
   statuses: write
 jobs:
   spriggs:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: bernardcosta/portolan@main
+      - uses: bernardcosta/portolan@v1
         with:
+          # provider/model: anthropic/<model>, openai/<model> or openrouter/<vendor>/<model>.
+          model: anthropic/claude-opus-5-5
+          # Add the secret of the provider you use. The others stay empty.
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
 The `workflow_dispatch:` line lets you run the [survey](spriggs/survey.md#in-ci) by hand from the same file. The concurrency group runs one job at a time per pull request, and one survey at a time. The 60-minute timeout is a backstop: the agent checks its own time budget only between turns.
+
+The `dependabot[bot]` in the `if:` line is optional for you, and it saves a runner: Dependabot pull requests get no repository secrets, so Spriggs skips them anyway.
 
 The action's inputs (`command`, `model`, the provider keys, `github-token`, `app-id`, `app-private-key`, `max-lines`) are listed in [the action reference](reference/github-action.md#inputs). Other settings go through `env:` on the step, for example `SPRIGGS_CONTEXT_TOKENS` and `SPRIGGS_BLOCKING`. The action does not read a `.env` or `bunfig.toml` from your repository, so a setting kept in a committed `.env` does not reach Spriggs in CI: put it under `env:` on the step (see [why](reference/github-action.md#bun-settings-from-the-repository-are-ignored)). Local runs are not affected: `bun run spriggs` still loads your own `.env`.
 
 Any provider from the [Model](#model) section works. The default is a convenience, not a requirement. For example, a Gemini model through OpenRouter:
 
 ```yaml
-      - uses: bernardcosta/portolan@main
+      - uses: bernardcosta/portolan@v1
         with:
           model: openrouter/google/gemini-2.5-pro
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start: the write tools create the folders they need. A pull request run writes only the pages its own change needs, so the first full set of pages (`docs/overview.md`, `docs/setup.md` and `docs/portolan.yml`) comes from `spriggs survey`. While the repository has no doc pages, the sticky comment of each pull request run points to the survey. For a fuller first set of docs, run [`spriggs survey`](#survey-spriggs-survey) first, locally or from the action.
+No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start. Run [`spriggs survey`](#survey-spriggs-survey) once, locally or from the action, for a first full set of pages; a pull request run adds only what its own change needs. While the repository has no doc pages, the sticky comment of each pull request run points to the survey.
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
 
-While this repository is private, other repositories can use the action only when they belong to the same owner and the repository setting **Actions → General → Access** allows it.
-
 ## CI
 
-This repository has two workflows:
+This repository has three workflows:
 
 - `ci.yml` runs `bun run check` and `bun run typecheck` on pull requests and on pushes to `main`.
-- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes: it is skipped when the actor is `github-actions[bot]` or the App's bot, and the harness checks again.
+- `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes or for Dependabot pull requests: it is skipped when the actor is `github-actions[bot]`, `dependabot[bot]` or the App's bot, and the harness checks again.
+- `release.yml` runs on a `v*.*.*` tag. See [Release](#release).
 
 A run that is not skipped or superseded posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
 
@@ -153,13 +161,31 @@ When `app-id` is set, the action mints a one-hour token from the key before each
 
 ```
 action.yml          the GitHub Action other repositories use
+README.md           the readme for new users: quick start, models, safety, the docs layout
+LICENSE             Apache-2.0
+SECURITY.md         how to report a vulnerability privately
 scripts/            open-survey-pr.sh (commits docs/ and opens the pull request after a survey run in CI),
                     bunfig.toml (empty on purpose; the action points Bun at it)
 packages/spriggs/   the harness and the `portolan` CLI
 docs/               this repo's own docs, per the /docs contract
 .github/workflows/  ci.yml (checks), spriggs.yml (the harness on pull requests and the survey
-                    by hand, through action.yml)
+                    by hand, through action.yml), release.yml (a release on each version tag)
+.github/dependabot.yml  weekly updates for the pinned actions and the Bun dependencies
 ```
+
+## Release
+
+Releases follow semantic versioning. Users call the action with the major tag (`@v1`), which always points to the latest `v1.x.x` release.
+
+1. In a pull request, set `version` in `packages/spriggs/package.json` to the new version, for example `1.1.0`, or `1.1.0-rc.1` for a pre-release. Merge it.
+2. Tag the merge commit on `main` and push the tag: `git tag v1.1.0 && git push origin v1.1.0`.
+3. The `release` workflow fails if the tag and the package version differ, or if the tagged commit is not on `main` (where `ci` already ran the checks). Otherwise it publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release; the first release of a major line creates it, because there is no major tag yet. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
+
+Tag only the newest version of a major line: a full release always moves the major tag to itself, so tagging an older patch would move `v1` backwards. The release job runs no install and no third-party code, because it holds a write token and moves the tag that every user runs. If moving the major tag fails, the release is published and the job fails; move `v1` by hand.
+
+A breaking change to the action's inputs, labels or the docs contract needs a new major version (`v2`).
+
+The actions that `action.yml` and the workflows use are pinned to full commit SHAs, with the version in a comment. Dependabot proposes the updates, a week after each version comes out. Dependabot pull requests do not start the `spriggs` job, because they get no repository secrets.
 
 ## Pull requests
 

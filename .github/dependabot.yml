@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # The pinned actions in action.yml and .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait a week after a release, so a compromised version is more likely caught first.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait a week after a release, so a compromised version is more likely caught first.
+    cooldown:
+      default-days: 7
+    groups:
+      dependencies:
+        patterns: ["*"]

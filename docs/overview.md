@@ -3,6 +3,7 @@ summary: Portolan keeps a repo's docs accurate on every pull request and publish
 covers:
   - action.yml
   - .github/workflows/spriggs.yml
+  - .github/workflows/release.yml
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/survey.ts
 ---
@@ -21,11 +22,11 @@ The repo is the source of truth. Each project keeps a `/docs` folder with a smal
 
 ## Status
 
-Early development. Spriggs is built first and runs on this repo's own pull requests. Portolan comes later.
+Spriggs is released as `v1` and runs on this repo's own pull requests. Portolan comes later.
 
 ## How to call it
 
-In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a step `uses: bernardcosta/portolan@main` and a provider key. The event picks the command: a pull request runs the normal check, and a start by hand (`workflow_dispatch`) runs the survey and opens a pull request with the new docs. The action's `command` input forces one or the other. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). Survey: `bun run spriggs survey` (`portolan spriggs survey`). See [setup.md](setup.md).
+In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a step `uses: bernardcosta/portolan@v1` and a provider key. The event picks the command: a pull request runs the normal check, and a start by hand (`workflow_dispatch`) runs the survey and opens a pull request with the new docs. The action's `command` input forces one or the other. This repository's own `spriggs.yml` workflow uses the action from its own checkout (`uses: ./`). Local run: `bun run spriggs run --local --base <ref>` (the `portolan spriggs run` CLI). Survey: `bun run spriggs survey` (`portolan spriggs survey`). See [setup.md](setup.md).
 
 ## Read next
 
@@ -39,4 +40,4 @@ In CI: Spriggs is a GitHub Action. Another repository adds one workflow with a s
 
 ## Owner
 
-bernardcosta.
+bernardcosta. The project is under the Apache-2.0 license. To report a vulnerability, follow `SECURITY.md` in the repository root; do not open a public issue.

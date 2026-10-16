@@ -1,0 +1,45 @@
+name: release
+
+# Push a tag such as v1.2.0 to release. The tag must match the version in packages/spriggs/package.json
+# and point to a commit on main, where ci already ran the checks. A full release also moves the major
+# tag (v1), which is what users write in `uses:`. A pre-release (v1.2.0-rc.1) does not move it.
+# This job holds a write token and moves the tag that every user runs, so it runs no third-party code:
+# no install, no checks, only first-party actions, jq and gh.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Check the tag
+        run: |
+          version="v$(jq -r .version packages/spriggs/package.json)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package version $version"
+            exit 1
+          fi
+          status="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)"
+          case "$status" in
+            identical | behind) ;;
+            *) echo "::error::tag $GITHUB_REF_NAME is not on main ($status)"; exit 1 ;;
+          esac
+      - name: Publish the release
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --prerelease
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          major="${GITHUB_REF_NAME%%.*}"
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$major" -f sha="$GITHUB_SHA" -F force=true ||
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$major" -f sha="$GITHUB_SHA"
