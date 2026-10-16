@@ -95,7 +95,7 @@ permissions:
   statuses: write
 jobs:
   spriggs:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -117,11 +117,9 @@ Any provider from the [Model](#model) section works. The default is a convenienc
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}
 ```
 
-No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start; Spriggs creates the required pages on the first pull request that needs them. While the repository has no doc pages, the sticky comment of each pull request run points to the survey. For a fuller first set of docs, run [`spriggs survey`](#survey-spriggs-survey) first, locally or from the action.
+No checkout step is needed: the action checks out the head commit itself. The repository needs no `docs/` folder to start. Run [`spriggs survey`](#survey-spriggs-survey) once, locally or from the action, for a first full set of pages; a pull request run adds only what its own change needs. While the repository has no doc pages, the sticky comment of each pull request run points to the survey.
 
 If you use a GitHub App, you can also skip the job on the App's own pushes by adding `&& github.actor != '<slug>[bot]'` to the `if:` line. Without it the job starts, and the harness skips its own commits anyway.
-
-While this repository is private, other repositories can use the action only when they belong to the same owner and the repository setting **Actions → General → Access** allows it.
 
 ## CI
 
@@ -166,13 +164,15 @@ docs/               this repo's own docs, per the /docs contract
 
 Releases follow semantic versioning. Users call the action with the major tag (`@v1`), which always points to the latest `v1.x.x` release.
 
-1. In a pull request, set `version` in `packages/spriggs/package.json` to the new version, for example `1.1.0`. Merge it.
+1. In a pull request, set `version` in `packages/spriggs/package.json` to the new version, for example `1.1.0`, or `1.1.0-rc.1` for a pre-release. Merge it.
 2. Tag the merge commit on `main` and push the tag: `git tag v1.1.0 && git push origin v1.1.0`.
-3. The `release` workflow runs the checks, fails if the tag and the package version differ, and publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
+3. The `release` workflow fails if the tag and the package version differ, or if the tagged commit is not on `main` (where `ci` already ran the checks). Otherwise it publishes a GitHub Release with notes made from the merged pull requests. Then it moves the major tag (`v1`) to the new release. A pre-release tag such as `v1.1.0-rc.1` is published as a pre-release and does not move the major tag.
+
+Tag only the newest version of a major line: a full release always moves the major tag to itself, so tagging an older patch would move `v1` backwards. The release job runs no install and no third-party code, because it holds a write token and moves the tag that every user runs.
 
 A breaking change to the action's inputs, labels or the docs contract needs a new major version (`v2`).
 
-The actions that `action.yml` and the workflows use are pinned to full commit SHAs, with the version in a comment. Dependabot proposes the updates. Dependabot pull requests do not start the `spriggs` job, because they get no repository secrets.
+The actions that `action.yml` and the workflows use are pinned to full commit SHAs, with the version in a comment. Dependabot proposes the updates, a week after each version comes out. Dependabot pull requests do not start the `spriggs` job, because they get no repository secrets.
 
 ## Pull requests
 

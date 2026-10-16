@@ -21,7 +21,7 @@ The repo is the source of truth. Each project keeps a `/docs` folder with a smal
 
 ## Status
 
-Early development. Spriggs is built first and runs on this repo's own pull requests. Portolan comes later.
+Spriggs is released as `v1` and runs on this repo's own pull requests. Portolan comes later.
 
 ## How to call it
 

@@ -14,7 +14,7 @@ You will get a reply within 7 days. When the fix is released, the advisory is pu
 
 Spriggs runs in your CI with your model provider key and a GitHub token. These are in scope:
 
-- A way for a pull request (its code, description or commits) to make Spriggs change files outside `docs/`, run code, or send data anywhere other than the model provider.
+- A way for a pull request (its code, description or commits) to make Spriggs change files outside `docs/`, run code, or send data anywhere other than the model provider and GitHub.
 - A way for the model to see or leak `GITHUB_TOKEN` or the provider key.
 - A way for a pull request from a fork to get the repository's secrets through the action.
 

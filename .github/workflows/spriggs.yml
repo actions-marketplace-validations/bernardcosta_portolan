@@ -20,7 +20,7 @@ permissions:
 jobs:
   spriggs:
     # Spriggs's own docs commits never start a run. The harness checks this too; this line saves the runner.
-    # Dependabot pull requests get no repository secrets, so a run there would only fail on the missing key.
+    # Dependabot pull requests get no secrets and the harness skips them too; this line saves the runner.
     if: github.actor != 'github-actions[bot]' && github.actor != 'dependabot[bot]' && github.actor != format('{0}[bot]', vars.SPRIGGS_APP_SLUG)
     runs-on: ubuntu-latest
     # A backstop: the agent's own time budget is checked only between turns.
@@ -30,6 +30,8 @@ jobs:
       # Never add pull_request_target to this workflow: it gives fork pull requests the secrets, and with
       # `uses: ./` the action's code would come from the fork.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: ./
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

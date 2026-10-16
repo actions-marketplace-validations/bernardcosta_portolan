@@ -7,7 +7,7 @@ Portolan, the hub that publishes those docs for people and agents, comes later. 
 ## What Spriggs does
 
 - **On every pull request.** It reads the diff, the pull request description and the commit messages. A gate checks that the change has a reason. Spriggs then edits `docs/`, writes a short change entry under `docs/changes/` and pushes one commit to the branch.
-- **When it cannot tell why a change was made, it asks instead of guessing.** It writes nothing and asks for a reason in the description.
+- **It does not guess why a change was made.** With no reason in the description, it still updates the docs of a change up to 1,500 lines from the diff, marks the run `docs:partial` and asks for the reason. For a larger change it writes nothing and asks first.
 - **One clear signal per pull request.** Each run posts one sticky comment, sets one label and one `spriggs` commit status.
 - **A full survey on demand.** Start the workflow by hand and Spriggs explores the whole repository. It checks the existing docs against the code, fills the gaps, and opens a pull request with the result. Use it on a repository with no docs, or when the docs have fallen behind.
 
@@ -39,7 +39,7 @@ permissions:
   statuses: write
 jobs:
   spriggs:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -101,7 +101,7 @@ docs/
   api/           generated API specs, never edited by hand
 ```
 
-Every page starts with a short frontmatter block that has a one-line `summary`. The full rules are in [the docs contract](docs/reference/docs-contract.md). You do not need a `docs/` folder to start. Spriggs creates the required pages on the first pull request that needs them.
+Every page starts with a short frontmatter block that has a one-line `summary`. The full rules are in [the docs contract](docs/reference/docs-contract.md). You do not need a `docs/` folder to start. Run the survey once for a first full set of pages. After that, each pull request run adds only what its change needs.
 
 ## Configuration
 
@@ -126,11 +126,12 @@ cd portolan && bun install
 export ANTHROPIC_API_KEY=...   # or another provider's key and SPRIGGS_MODEL
 
 cd /path/to/your/repo
-bun /path/to/portolan/packages/spriggs/src/cli.ts run --local --base main --reason "Why this change was made"
-bun /path/to/portolan/packages/spriggs/src/cli.ts survey
+spriggs() { bun --no-env-file --config=/path/to/portolan/scripts/bunfig.toml /path/to/portolan/packages/spriggs/src/cli.ts "$@"; }
+spriggs run --local --base main --reason "Why this change was made"
+spriggs survey
 ```
 
-A local run uses your working copy, posts nothing and commits nothing. The doc edits stay in the working tree for you to review.
+A local run uses your working copy, posts nothing and commits nothing. The doc edits stay in the working tree for you to review. The two flags stop Bun from loading the `.env` and `bunfig.toml` of the repository you run it in, as the action does. So export the key in your shell.
 
 ## Learn more
 
