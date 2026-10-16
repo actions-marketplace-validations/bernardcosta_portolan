@@ -84,7 +84,7 @@ The three tools that change a page under `docs/` (`write_doc`, `move_doc` and `d
 
 A provider implements one method, `complete({ system, turns, tools, maxTokens })`, and returns the text, tool calls, usage (input, output, cached), the stop reason and the raw assistant message. The raw message is sent back unchanged on the next request.
 
-- `AnthropicProvider` uses the Messages API with strict tool schemas. It marks the system prompt, the first user message and the last message as cache points, so each turn reuses the earlier ones. A "prompt is too long" error, or a reply stopped because the context window filled up, becomes a `ContextWindowError`. A refusal becomes an error.
+- `AnthropicProvider` uses the Messages API with strict tool schemas. It marks the system prompt, the first user message and the last message as cache points, so each turn reuses the earlier ones. An error whose text says the prompt is too long or names the context window becomes a `ContextWindowError`; the older wording, `input length and max_tokens exceed context limit`, is matched too. A reply that stops because the context window filled up becomes one as well, and that error carries the usage it was billed for, so the loop counts it before it clears and retries. A refusal becomes an error.
 - `OpenAIProvider` uses Chat Completions with strict function tools. It also serves `openrouter/` with the base URL `https://openrouter.ai/api/v1`. Context-length errors become a `ContextWindowError`. Tool errors are sent as `ERROR: <message>`.
 
 Both clients use a five-minute request timeout. To add a provider, implement the `Provider` interface in `agent/providers/types.ts` and add a case in `model.ts`.

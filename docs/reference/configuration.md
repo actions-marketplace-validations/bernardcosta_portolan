@@ -4,7 +4,6 @@ covers:
   - packages/spriggs/src/cli.ts
   - packages/spriggs/src/agent/model.ts
   - packages/spriggs/src/agent/agents.ts
-  - packages/spriggs/src/agent/loop.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/run.ts
   - packages/spriggs/src/forge/github.ts
