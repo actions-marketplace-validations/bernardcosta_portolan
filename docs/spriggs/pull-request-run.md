@@ -29,7 +29,7 @@ covers:
 
 ## 1. Read the context
 
-The forge builds the pull request context: title, description, labels, commits oldest first, changed files with line counts, and the diff. See [forges.md](forges.md). Spriggs also loads `docs/portolan.yml`; a broken file only prints a warning.
+The forge builds the pull request context: title, description, labels, commits oldest first, changed files with line counts, and the `git diff` arguments that reproduce the change. See [forges.md](forges.md). Spriggs then builds the per-file diffs from those arguments. Spriggs also loads `docs/portolan.yml`; a broken file only prints a warning.
 
 ## 2. Skip rules
 

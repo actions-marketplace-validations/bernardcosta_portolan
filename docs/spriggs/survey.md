@@ -48,7 +48,7 @@ The report is markdown, headed "Spriggs: survey report". It is written like the 
 - "N items left to write or check", pointing to `docs/todo.md`; or "I wrote and checked every page I planned." when the run finished with nothing left. A run that stopped early with no todo makes neither claim;
 - "I removed `docs/todo.md`: nothing is left." when the run cleared a todo from an earlier run;
 - "A note from the run:" with the model's note, if any;
-- "**Checked against the code after writing:**" with one list item per correction the check pass made, when it made any;
+- "**Checked against the code after writing:**" with the check pass's notes, one list item per line: its corrections, the pages a stopped checker could not check, and the pages left out by the check budget. The whole section is left out when the pass did not run;
 - a line with the model name, tokens and turns, the check pass's tokens and turns included, when the run knows them; a stop on an error that carries no usage leaves the line out.
 
 The stop reason and the file paths are flattened to one line each: line breaks and control characters become spaces, so neither can start a line of its own. The note keeps its line breaks: its other control characters become spaces, and a line that begins with `---` is escaped, so it cannot pass for a marker line of the report. In the note, `@` mentions, issue references and links are put in code. The note in the sticky comment of a pull request run gets that same treatment for `@` mentions, issue references and links, but it is not flattened and a line that begins with `---` is left as it is. GitHub does not notify, link or close anything inside code, so a note cannot ping people or close an issue when the pull request is merged.

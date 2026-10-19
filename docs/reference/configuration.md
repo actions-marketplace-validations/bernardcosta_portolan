@@ -44,7 +44,7 @@ An unknown command prints the usage and exits with code 2. An unexpected error p
 | `SPRIGGS_MAX_LINES` | 5000 | `gate/decide.ts` | Changed lines above which a pull request run writes nothing and asks to split the change. |
 | `SPRIGGS_BLOCKING` | not set | `run.ts` | When `true`, a gate stop sets the `spriggs` status to `failure`. Breaking changes do that anyway. |
 | `SPRIGGS_EFFORT` | `high` | `agent/agents.ts` | `high` runs the check pass after a pull request run and a survey, and gives the survey its full budget. `low` skips the check pass and halves the survey budget. The docs agent always reads the whole change. |
-| `SPRIGGS_CHECK_TOKENS` | 3000000 | `verify.ts` | Budget of the check pass in uncached tokens. Divided by one checker's budget (1,000,000) it gives the number of checkers a run may start: three by default. Pages that do not fit are named in the report. |
+| `SPRIGGS_CHECK_TOKENS` | 3000000 | `verify.ts` | Budget of the check pass in uncached tokens. Divided by one checker's budget (1,000,000) it gives the number of checkers a run may start: three by default, and at least one however small the value. Pages that do not fit are named in the report. |
 | `SPRIGGS_SURVEY_TOKENS` | 2000000 (`high`) or 1000000 (`low`) | `agent/agents.ts` | Token cap of the `survey` agent. Overrides the default that `SPRIGGS_EFFORT` sets. |
 | `GITHUB_TOKEN` | none | `forge/github.ts` | Required for `run` without `--local`. Used for the comment, label, status and push. |
 | `GITHUB_EVENT_PATH` | set by GitHub Actions | `forge/github.ts` | Required for `run` without `--local`. Must point to a `pull_request` event. |
