@@ -204,7 +204,7 @@ function describe(name: string, input: unknown): string {
     return `write_doc ${str(o.path)} (${lines} line${lines === 1 ? "" : "s"})`;
   }
   if (name === "move_doc") return `move_doc ${str(o.from)} -> ${str(o.to)}`;
-  if (name === "read_file" || name === "read_diff" || name === "delete_doc")
+  if (name === "read_file" || name === "read_diff" || name === "edit_doc" || name === "delete_doc")
     return `${name} ${str(o.path)}`;
   return name;
 }

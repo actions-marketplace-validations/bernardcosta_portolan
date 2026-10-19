@@ -76,7 +76,7 @@ The model is `provider/model`. Precedence: the `--model` flag, then `SPRIGGS_MOD
 | `openai/<model>` | `OPENAI_API_KEY` |
 | `openrouter/<vendor>/<model>` | `OPENROUTER_API_KEY` |
 
-A missing model or key fails the run before any network call, naming the missing variable.
+A missing model or key stops the run before it calls a model, naming the missing variable. In a pull request run the harness has already talked to GitHub by then, and it reports the failure as a comment, a label and a status.
 
 ## Use Spriggs in another repository
 
@@ -138,7 +138,7 @@ This repository has three workflows:
 - `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes or for Dependabot pull requests: it is skipped when the actor is `github-actions[bot]`, `dependabot[bot]` or the App's bot, and the harness checks again.
 - `release.yml` runs on a `v*.*.*` tag. See [Release](#release).
 
-A run that is not skipped or superseded posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#10-report).
+A run that reaches the report posts one sticky comment, sets exactly one label (`docs:done`, `docs:partial`, `docs:none` or `docs:needs-input`) and sets a `spriggs` commit status. When a run ends `docs:done` or `docs:none`, it also marks the earlier merged pull requests it caught up on `docs:done`. What each outcome means, when a run is skipped, and when the status fails are in [A pull request run](spriggs/pull-request-run.md#11-report).
 
 ### Run as a GitHub App (optional)
 

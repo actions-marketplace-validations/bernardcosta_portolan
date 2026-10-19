@@ -6,6 +6,7 @@ covers:
   - packages/spriggs/src/agent/agents.ts
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/run.ts
+  - packages/spriggs/src/verify.ts
   - packages/spriggs/src/forge/github.ts
   - .env.example
 ---
@@ -42,7 +43,9 @@ An unknown command prints the usage and exits with code 2. An unexpected error p
 | `OPENROUTER_API_KEY` | none | `agent/model.ts` | Key for `openrouter/<vendor>/<model>` models, sent to OpenRouter's OpenAI-style endpoint. |
 | `SPRIGGS_MAX_LINES` | 5000 | `gate/decide.ts` | Changed lines above which a pull request run writes nothing and asks to split the change. |
 | `SPRIGGS_BLOCKING` | not set | `run.ts` | When `true`, a gate stop sets the `spriggs` status to `failure`. Breaking changes do that anyway. |
-| `SPRIGGS_SURVEY_TOKENS` | 2000000 | `agent/agents.ts` | Token cap of the `survey` agent. |
+| `SPRIGGS_EFFORT` | `high` | `agent/agents.ts` | `high` runs the check pass after a pull request run and a survey, and gives the survey its full budget. `low` skips the check pass and halves the survey budget. The docs agent always reads the whole change. |
+| `SPRIGGS_CHECK_TOKENS` | 3000000 | `verify.ts` | Budget of the check pass in uncached tokens. Divided by one checker's budget (1,000,000) it gives the number of checkers a run may start: three by default. Pages that do not fit are named in the report. |
+| `SPRIGGS_SURVEY_TOKENS` | 2000000 (`high`) or 1000000 (`low`) | `agent/agents.ts` | Token cap of the `survey` agent. Overrides the default that `SPRIGGS_EFFORT` sets. |
 | `GITHUB_TOKEN` | none | `forge/github.ts` | Required for `run` without `--local`. Used for the comment, label, status and push. |
 | `GITHUB_EVENT_PATH` | set by GitHub Actions | `forge/github.ts` | Required for `run` without `--local`. Must point to a `pull_request` event. |
 | `SPRIGGS_APP_SLUG` | not set | `forge/github.ts` | Set by the action when it runs as a GitHub App. Spriggs then commits and comments as `<slug>[bot]`. |
@@ -55,4 +58,4 @@ For the number settings, a value that is empty, zero or not a number falls back 
 2. Else `SPRIGGS_MODEL`.
 3. Else `anthropic/claude-opus-5-5`, if `ANTHROPIC_API_KEY` is set.
 
-The run then fails before any network call when no model is set, when the value has no `/`, when the provider is not one of the three, or when that provider's key is missing. The error names the missing variable.
+The run then fails before it calls a model when no model is set, when the value has no `/`, when the provider is not one of the three, or when that provider's key is missing. The error names the missing variable. In a pull request run the harness has already called GitHub by then, and the failed run is reported there.

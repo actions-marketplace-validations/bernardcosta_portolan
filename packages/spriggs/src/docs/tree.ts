@@ -37,12 +37,25 @@ export async function docsIndex(cwd = process.cwd()): Promise<DocInfo[]> {
   return docs;
 }
 
-/** Docs whose `covers` paths are a prefix of a changed file. No model call. */
+/**
+ * Docs whose `covers` paths are a prefix of a changed file, the closest match first: a page that
+ * covers `src/gate/decide.ts` comes before one that covers `src`. No model call.
+ */
 export function affectedDocs(index: DocInfo[], changedPaths: string[]): DocInfo[] {
-  return index.filter((doc) =>
-    doc.covers.some((cover) => {
-      const prefix = cover.replace(/\/?\*+$/, "").replace(/\/$/, "");
-      return changedPaths.some((p) => p === prefix || p.startsWith(`${prefix}/`));
-    }),
-  );
+  // The length of the longest cover that matches a changed file; 0 when none does.
+  const match = (doc: DocInfo) =>
+    Math.max(
+      0,
+      ...doc.covers.map((cover) => {
+        const prefix = cover.replace(/\/?\*+$/, "").replace(/\/$/, "");
+        return changedPaths.some((p) => p === prefix || p.startsWith(`${prefix}/`))
+          ? prefix.length
+          : 0;
+      }),
+    );
+  return index
+    .map((doc) => ({ doc, match: match(doc) }))
+    .filter((m) => m.match > 0)
+    .sort((a, b) => b.match - a.match)
+    .map((m) => m.doc);
 }

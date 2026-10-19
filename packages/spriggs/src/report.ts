@@ -24,6 +24,10 @@ type DebtReport = {
   caughtUp?: number[];
   /** More debt than one run checks. */
   moreDebt?: boolean;
+  /** The check pass's notes, one per line: its corrections, and the pages it could not check. Unset when it did not run. */
+  checked?: string;
+  /** Pages the check pass read against the code. */
+  checkedPages?: number;
 };
 
 export type RunReport =
@@ -290,5 +294,23 @@ function renderRun(run: RunReport): string[] {
         ]
       : []),
   ];
-  return [...files, ...debt, ...note, ...missed, usageLine(run.usage, run.model, run.turns)];
+  // The checkers say in their own notes when every claim held, so the count line claims nothing more.
+  const checked =
+    run.checked === undefined
+      ? []
+      : [
+          run.checkedPages
+            ? `I checked ${n(run.checkedPages)} page${run.checkedPages === 1 ? "" : "s"} against the code after the run.`
+            : "I could not check any page against the code after the run.",
+          ...(run.checked ? ["", noteText(run.checked)] : []),
+          "",
+        ];
+  return [
+    ...files,
+    ...checked,
+    ...debt,
+    ...note,
+    ...missed,
+    usageLine(run.usage, run.model, run.turns),
+  ];
 }

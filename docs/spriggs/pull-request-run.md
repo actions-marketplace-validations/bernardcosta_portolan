@@ -6,6 +6,9 @@ covers:
   - packages/spriggs/src/gate/decide.ts
   - packages/spriggs/src/report.ts
   - packages/spriggs/src/agent/prompt.ts
+  - packages/spriggs/src/agent/survey-prompt.ts
+  - packages/spriggs/src/verify.ts
+  - packages/spriggs/src/docs/tree.ts
 ---
 
 # A pull request run
@@ -18,10 +21,11 @@ covers:
 4. Verdict (gate stage two)
 5. Docs debt
 6. Agent run
-7. Post-run check
-8. Change entry
-9. Commit and push
-10. Report
+7. Check pass
+8. Post-run check
+9. Change entry
+10. Commit and push
+11. Report
 
 ## 1. Read the context
 
@@ -79,7 +83,7 @@ Two things follow from this. The debt is cleared when this pull request's run su
 
 ## 6. Agent run
 
-Spriggs picks the model (see [configuration.md](../reference/configuration.md#how-the-model-is-picked)). A missing model or key fails the run here. The model gets one message with:
+Spriggs picks the model (see [configuration.md](../reference/configuration.md#how-the-model-is-picked)). A missing model or key fails the run here. Once 80% of the agent's turns, tokens or time is spent, the loop sends it one wrap-up message: read only the changed files it still needs, write the edits it has evidence for, then call `finish`. The model gets one message with:
 
 - the title, description and commits (subject and body), marked as untrusted author data;
 - the gate's facts;
@@ -99,30 +103,41 @@ After the run, Spriggs counts which changed files the model saw (inline, or read
 
 If the conversation no longer fits the model's context window, the provider rejects the request; nothing is cut. Spriggs clears older tool results and sends it again (see [agent-harness.md](agent-harness.md#the-loop)). If it still does not fit, the run fails with a message that says the change does not fit. To fix it, use a model with a larger window, or split the pull request. A run that runs out of turns, tokens or time before `finish` also fails.
 
-## 7. Post-run check
+## 7. Check pass
 
-`enforce.ts` checks every file the model changed, including the pages it deleted. In CI it also checks that nothing else in the working tree changed. The rules are in [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). On any failure, every write, move and deletion is undone.
+When the docs agent has finished, a second set of agents reads pages back against the code. Each checker gets a fresh conversation, so it does not trust what the run wrote, its own budget, and a batch of pages filled by size; up to three checkers run at the same time, and the check budget `SPRIGGS_CHECK_TOKENS` sets how many a run may start (three by default). See [The check pass](agent-harness.md#the-check-pass). The pages are:
 
-## 8. Change entry
+- the markdown pages this run wrote or moved, first;
+- then every page whose `covers` match a changed file, whether or not the run touched it, the closest match first. These are the pages that may still state a fact this change makes stale. The pages that do not fit the check budget are left out and named in the comment.
+
+A page the run deleted is not checked, and a page the run only read is checked only when its `covers` match a changed file. The checker message lists the changed files too, generated files aside, and marks each page "written by this run" or "covers changed code": on the first kind the checker tests every claim, on the second only the claims the changed files can affect. A checker may only `edit_doc` the pages of its own batch, so it cannot create, move or delete a page, and it has no `finish` checks of its own. A checker that runs out of budget stops on its own: the corrections it already wrote stay, the console logs `verify stopped: <reason>`, its pages do not count as checked, a note names them in the comment, and the run goes on. The console logs `verify: checking N page(s) in M batch(es)` and then `verify: done:` with the tokens. With `SPRIGGS_EFFORT=low` this step is skipped and no page is checked again (see [configuration.md](../reference/configuration.md)).
+
+The corrections count as the run's own. A checker shares the run's record of file changes, so the [post-run check](#8-post-run-check) validates the corrected pages too and undoes them with everything else when it fails. A page a checker corrected joins the `docs:` commit even when the docs agent wrote nothing, and the checker's tokens and turns are added to the run's totals.
+
+## 8. Post-run check
+
+`enforce.ts` checks every file the model changed, including the pages it deleted and any page the check pass corrected. In CI it also checks that nothing else in the working tree changed. The rules are in [the docs contract](../reference/docs-contract.md#what-the-post-run-check-refuses). On any failure, every write, move and deletion is undone.
+
+## 9. Change entry
 
 The run is partial when the verdict was partial (`reason-missing`) or when some changed files went unread (`diff-too-large`). The entry is written unless the change is `internal` and not a large refactor. In `--local` mode it is printed to the console instead of written, since there is no pull request number. See [the docs contract](../reference/docs-contract.md#change-entries) for the format.
 
-## 9. Commit and push
+## 10. Commit and push
 
-When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line, at most 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run. After a push, the comment's hidden marker and the commit status name the new docs commit.
+When there are doc edits or an entry, Spriggs commits everything under `docs/` with the message `docs: <title>` (one line; the title is cut at 72 characters) and pushes it to the pull request branch. If the push loses a race with a newer push, the run logs `superseded` and exits with code 0 without reporting; the newer push starts its own run. After a push, the comment's hidden marker and the commit status name the new docs commit.
 
-## 10. Report
+## 11. Report
 
 Each run that is not skipped or superseded posts the sticky comment, sets one label and sets the `spriggs` status:
 
 | Outcome | Label | Status |
 | --- | --- | --- |
 | Docs or entry written, everything read, reason stated | `docs:done` | success |
-| Nothing to write, everything read | `docs:none` | success |
+| Nothing to write, everything read, reason stated | `docs:none` | success |
 | Reason missing, or changed files left unread | `docs:partial` | success |
 | Gate abstained | `docs:needs-input` | success, or failure when the change is breaking or `SPRIGGS_BLOCKING=true` |
 | Failed (configuration, agent error, budget, context window, check, entry or push) | `docs:needs-input` | failure |
 
-The status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the reason and the raw error, cut at 140 characters. The one exception is a configuration error (no model, or no key for it): its status text is `Spriggs is not configured`, and the reason is in the comment. The comment opens with a heading and a line of introduction; then comes the label in bold and what it means. A failed run puts the raw error just after the reason, in a fenced code block, so it reads as a block and markdown inside it does nothing; the fence is longer than any run of backticks in the text. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the survey (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit (new ones marked "(new page)", deleted ones marked "(deleted)"), a line naming the debt pull requests this run caught up on, a **More docs debt** note when there were more than 10, any note from the model, any unread files under **Not read:**, a line with the model name, tokens and turns, and a folded **What I saw** table of the signals, including the size and the line limit.
+On a run that succeeds and on a gate stop, the status text is one line of at most 140 characters, starting with `done:`, `partial:` or `stopped:`. A failure uses the reason and the raw error, cut at 140 characters. The one exception is a configuration error (no model, or no key for it): its status text is `Spriggs is not configured`, and the reason is in the comment. The comment opens with a heading and a line of introduction; then comes the label in bold and what it means. A failed run that has a raw error puts it just after the reason, in a fenced code block, so it reads as a block and markdown inside it does nothing; the fence is longer than any run of backticks in the text. A post-run check failure and a context-window failure carry no raw error, so their reason is the whole line. Then come any **Heads up** note and, when the repository had no markdown pages under `docs/` (change entries aside) at the start of the run, a **No docs yet** note. That note says a pull request run only covers one change, points to the survey (start the Spriggs workflow by hand from the Actions tab), and says the workflow needs `workflow_dispatch:` under `on:` for that. Then come the files in the `docs:` commit (new ones marked "(new page)", deleted ones marked "(deleted)"). When the check pass read any page, the next line says how many pages it read against the code, with the checkers' notes under it as one list item per line: the corrections, and the pages a stopped checker could not check. When no checker finished, the line says that no page could be checked. Then come a line naming the debt pull requests this run caught up on, a **More docs debt** note when there were more than 10, any note from the model, any unread files under **Not read:**, a line with the model name, tokens and turns (the check pass's included), and a folded **What I saw** table of the signals, including the size and the line limit. A failed run leaves the check pass line out.
 
 In the model's note, `@` mentions, issue references (`#12`, `owner/repo#12`, `GH-12`) and links are put in code, and a lone backtick becomes `'`. GitHub does not notify, link or close anything inside code, so the note cannot ping people or close an issue. The commit message is not treated this way: a title with "fixes #12" in `docs: <title>` can still close that issue on merge.
