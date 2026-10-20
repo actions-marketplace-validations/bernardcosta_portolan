@@ -24,6 +24,10 @@ type DebtReport = {
   caughtUp?: number[];
   /** More debt than one run checks. */
   moreDebt?: boolean;
+  /** The check pass's notes, one per line: its corrections, and the pages it could not check. Unset when it did not run. */
+  checked?: string;
+  /** Pages the check pass read against the code. */
+  checkedPages?: number;
 };
 
 export type RunReport =
@@ -290,5 +294,25 @@ function renderRun(run: RunReport): string[] {
         ]
       : []),
   ];
-  return [...files, ...debt, ...note, ...missed, usageLine(run.usage, run.model, run.turns)];
+  // The notes hold the corrections and the pages no checker finished; empty notes mean nothing to fix.
+  const checked =
+    run.checked === undefined
+      ? []
+      : [
+          run.checkedPages
+            ? run.checked
+              ? "After the run I checked these docs against the code. What I found:"
+              : "After the run I checked these docs against the code and found nothing to fix."
+            : "After the run I could not check the docs against the code.",
+          ...(run.checked ? ["", noteText(run.checked)] : []),
+          "",
+        ];
+  return [
+    ...files,
+    ...checked,
+    ...debt,
+    ...note,
+    ...missed,
+    usageLine(run.usage, run.model, run.turns),
+  ];
 }
