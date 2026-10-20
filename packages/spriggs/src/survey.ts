@@ -1,10 +1,10 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { SURVEY_AGENT, VERIFY_AGENT } from "./agent/agents";
+import { SURVEY_AGENT } from "./agent/agents";
 import { AgentError, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
-import type { Provider, Usage } from "./agent/providers/types";
-import { buildSurveyMessage, buildVerifyMessage, TODO_PATH } from "./agent/survey-prompt";
+import type { Usage } from "./agent/providers/types";
+import { buildSurveyMessage, TODO_PATH } from "./agent/survey-prompt";
 import { createRuntime, readableFile, type ToolRuntime } from "./agent/tools";
 import { deadLinks } from "./checks/links";
 import { splitFrontmatter } from "./docs/frontmatter";
@@ -13,8 +13,7 @@ import { docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
 import { git } from "./git";
 import { flat, renderSurveyReport } from "./report";
-
-const n = (x: number) => x.toLocaleString("en-US");
+import { loadPages, sum, usageLine, verify } from "./verify";
 
 /** Exit code when the run stopped before `finish`: the pages written stay, but the set is not complete. */
 export const STOPPED_EARLY = 3;
@@ -64,7 +63,16 @@ export async function survey(opts: { cwd?: string; model?: string } = {}): Promi
     usage = agent.usage;
     turns = agent.turns;
     console.log(`done in ${agent.turns} turns: ${usageLine(agent.usage)}`);
-    const v = await verify(provider, rt);
+    // Check what this run wrote. The todo is a plan, not a claim about the code.
+    const pages = await loadPages(
+      cwd,
+      [...rt.originals.keys()].filter((p) => p !== TODO_PATH),
+    );
+    const v = await verify(
+      provider,
+      rt,
+      pages.map((p) => ({ ...p, written: true })),
+    );
     if (v) {
       checked = v.notes;
       usage = sum(usage, v.usage);
@@ -112,97 +120,6 @@ export async function survey(opts: { cwd?: string; model?: string } = {}): Promi
   return stopped === undefined ? 0 : STOPPED_EARLY;
 }
 
-/** Pages per checker. A small scope gives a deeper check (20261015-verify: twice the errors fixed). */
-const VERIFY_BATCH = 3;
-/** Checkers that run at the same time. Providers limit concurrent requests. */
-const VERIFY_PARALLEL = 3;
-
-type Page = { path: string; content: string };
-
-/**
- * The check pass: fresh agents, one per small batch of the pages this run wrote, check each claim
- * against the code and correct what the code does not support. It never fails the run; a checker
- * that stops keeps the corrections it wrote.
- */
-async function verify(
-  provider: Provider,
-  rt: ToolRuntime,
-): Promise<{ notes: string; usage: Usage; turns: number } | undefined> {
-  const pages: Page[] = [];
-  for (const path of rt.originals.keys()) {
-    const abs = join(rt.cwd, path);
-    if (path.endsWith(".md") && path !== TODO_PATH && existsSync(abs))
-      pages.push({ path, content: await Bun.file(abs).text() });
-  }
-  if (!pages.length) return undefined;
-  const batches = toBatches(pages);
-  console.log(`\nverify: checking ${pages.length} page(s) in ${batches.length} batch(es)`);
-
-  const total = { notes: [] as string[], usage: { input: 0, output: 0, cached: 0 }, turns: 0 };
-  const queue = [...batches];
-  const worker = async () => {
-    for (let batch = queue.shift(); batch; batch = queue.shift()) {
-      const r = await checkBatch(provider, rt, batch);
-      total.usage = sum(total.usage, r.usage);
-      total.turns += r.turns;
-      // One list item per line: GitHub joins plain lines into one paragraph.
-      for (const line of r.notes.split("\n").map((l) => l.trim()))
-        if (line) total.notes.push(line.startsWith("- ") ? line : `- ${line}`);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(VERIFY_PARALLEL, batches.length) }, worker));
-  console.log(`verify: done: ${usageLine(total.usage)}`);
-  return { notes: total.notes.join("\n"), usage: total.usage, turns: total.turns };
-}
-
-/** One checker with its own runtime: its finish result and its writes stay apart from the others. */
-async function checkBatch(provider: Provider, rt: ToolRuntime, batch: Page[]) {
-  const own: ToolRuntime = {
-    ...rt,
-    originals: new Map(),
-    writable: new Set(batch.map((p) => p.path)),
-    finished: undefined,
-  };
-  let r: { notes: string; usage: Usage; turns: number };
-  try {
-    const a = await runAgent({
-      agent: VERIFY_AGENT,
-      provider,
-      rt: own,
-      userMessage: buildVerifyMessage(batch),
-    });
-    r = { notes: a.result.notes, usage: a.usage, turns: a.turns };
-  } catch (e) {
-    console.warn(`verify stopped: ${flat((e instanceof Error && e.message) || String(e))}`);
-    r = {
-      notes: "",
-      usage: e instanceof AgentError ? e.usage : { input: 0, output: 0, cached: 0 },
-      turns: 0,
-    };
-  }
-  return r;
-}
-
-/** Batches of up to VERIFY_BATCH pages, balanced by size: the largest page goes to the lightest batch. */
-function toBatches(pages: Page[]): Page[][] {
-  const batches: Page[][] = Array.from(
-    { length: Math.ceil(pages.length / VERIFY_BATCH) },
-    () => [],
-  );
-  const size = (b: Page[]) => b.reduce((n, p) => n + p.content.length, 0);
-  for (const p of [...pages].sort((a, b) => b.content.length - a.content.length)) {
-    const open = batches.filter((b) => b.length < VERIFY_BATCH);
-    open.sort((a, b) => size(a) - size(b))[0]?.push(p);
-  }
-  return batches;
-}
-
-const sum = (a: Usage | undefined, b: Usage): Usage => ({
-  input: (a?.input ?? 0) + b.input,
-  output: (a?.output ?? 0) + b.output,
-  cached: (a?.cached ?? 0) + b.cached,
-});
-
 /** Root files one per line, then each folder (two levels) with its file count. Capped. */
 function fileTree(paths: Iterable<string>): string {
   const roots: string[] = [];
@@ -236,8 +153,4 @@ async function todoLeft(rt: ToolRuntime): Promise<number> {
   const items = body?.split("\n").filter((l) => /^\s*([-*+]|\d+[.)])\s+\S/.test(l)).length ?? 0;
   if (items === 0 && rt.originals.has(TODO_PATH)) rmSync(join(rt.cwd, TODO_PATH), { force: true });
   return items;
-}
-
-function usageLine(u: { input: number; output: number; cached: number }): string {
-  return `${n(u.input)} input tokens (${n(u.cached)} from cache), ${n(u.output)} output tokens`;
 }

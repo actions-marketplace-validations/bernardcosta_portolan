@@ -15,6 +15,7 @@ import { decide, skipReason } from "./gate/decide";
 import { isGenerated, signals } from "./gate/signals";
 import { diffByFile, git } from "./git";
 import { type Coverage, type RunReport, renderComment, statusLine } from "./report";
+import { loadPages, sum, verify } from "./verify";
 
 export type RunOptions = { cwd?: string; model?: string };
 
@@ -111,6 +112,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     console.warn(`warning: could not list the docs debt: ${(e as Error).message}`);
   }
 
+  // The pages whose covers touch the change: shown to the docs agent, and checked after it (drift).
+  const affected = affectedDocs(index, changedPaths);
   let agent: AgentResult;
   try {
     const message = buildUserMessage({
@@ -123,7 +126,7 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       files: ctx.files,
       diffs: rt.diffs,
       index,
-      affected: affectedDocs(index, changedPaths),
+      affected,
       debt,
     });
     agent = await runAgent({
@@ -142,7 +145,8 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     }
     return fail("The agent run failed:", undefined, e);
   }
-  const { result, usage, turns } = agent;
+  const { result } = agent;
+  let { usage, turns } = agent;
 
   const counted = changedPaths.filter((p) => !isGenerated(p));
   const coverage: Coverage = {
@@ -151,6 +155,19 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     missed: counted.filter((p) => !agent.seen.has(p)),
   };
   console.log(`coverage: read ${coverage.read}/${coverage.changed}`);
+
+  // The check pass: the pages written this run, then the affected pages. Its corrections join the docs commit.
+  const pages = await loadPages(cwd, [...rt.originals.keys(), ...affected.map((d) => d.path)]);
+  const verified = await verify(
+    provider,
+    rt,
+    pages.map((p) => ({ ...p, written: rt.originals.has(p.path) })),
+    counted,
+  );
+  if (verified) {
+    usage = sum(usage, verified.usage);
+    turns += verified.turns;
+  }
 
   // The tree check only in CI: a local working copy has the author's own uncommitted changes.
   const check = await enforce(rt, { strictTree: ctx.event !== undefined });
@@ -180,11 +197,15 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
       pr: ctx.pr?.number ?? 0,
       coverage: partial ? "partial" : "full",
       ...(reason ? { reason } : {}),
-      docs: result.docs.filter(
-        (d) =>
-          !check.deleted.includes(d) &&
-          (check.written.includes(d) || index.some((i) => i.path === d)),
-      ),
+      // The pages the model named, plus any page a checker corrected without the docs agent naming it.
+      docs: [
+        ...new Set([
+          ...result.docs.filter(
+            (d) => check.written.includes(d) || index.some((i) => i.path === d),
+          ),
+          ...check.written.filter((d) => d.endsWith(".md")),
+        ]),
+      ].filter((d) => !check.deleted.includes(d)),
       body: result.body,
     };
     try {
@@ -202,7 +223,15 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     }
   }
 
-  const base = { usage, model: provider.model, turns, notes: result.notes, coverage, moreDebt };
+  const base = {
+    usage,
+    model: provider.model,
+    turns,
+    notes: result.notes,
+    coverage,
+    moreDebt,
+    ...(verified ? { checked: verified.notes, checkedPages: verified.pages } : {}),
+  };
   const status: [StatusState, string] = ["success", statusLine(verdict, s, coverage.missed.length)];
   // The debt is paid only by a full run; a partial run leaves it for the next one.
   const clearDebt = async (): Promise<number[] | undefined> => {

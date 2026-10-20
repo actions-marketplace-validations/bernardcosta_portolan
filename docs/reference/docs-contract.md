@@ -9,6 +9,7 @@ covers:
   - packages/spriggs/src/agent/tools.ts
   - packages/spriggs/src/agent/prompt.ts
   - packages/spriggs/src/checks/links.ts
+  - packages/spriggs/src/verify.ts
 ---
 
 # The docs contract
@@ -19,7 +20,7 @@ Every project keeps its docs in a `docs/` folder in git. Spriggs writes to it, a
 
 | Path | What it is | Who writes it |
 | --- | --- | --- |
-| `docs/portolan.yml` | Project metadata. Only `name` is required. | People; Spriggs adds it if missing |
+| `docs/portolan.yml` | Project metadata. Only `name` is required. | People; the survey adds it if missing |
 | `docs/overview.md` | What the project does, who owns it, how to call it. About 300 words. `README.md` is accepted in its place. | People and Spriggs |
 | `docs/setup.md` | How to get a working copy running. | People and Spriggs |
 | `docs/changes/` | One file per change (one per pull request). | Spriggs only |
@@ -28,7 +29,7 @@ Every project keeps its docs in a `docs/` folder in git. Spriggs writes to it, a
 
 Folders go at most two levels deep under `docs/`. For example `docs/guides/deploy.md` and `docs/guides/cloud/aws.md` are fine, `docs/a/b/c/page.md` is not.
 
-Spriggs's `write_doc`, `move_doc` and `delete_doc` tools share one set of path rules. They only touch `.md`, `.yml` and `.html` files, never under `docs/api/` or `docs/changes/`, and never a symlink out of `docs/`. The required pages `docs/overview.md`, `docs/setup.md` and `docs/portolan.yml` can be edited in place, but never moved or deleted.
+Spriggs's `write_doc`, `edit_doc`, `move_doc` and `delete_doc` tools share one set of path rules. They only touch `.md`, `.yml` and `.html` files, never under `docs/api/` or `docs/changes/`, and never a symlink out of `docs/`. The required pages `docs/overview.md`, `docs/setup.md` and `docs/portolan.yml` can be edited in place, but never moved or deleted. `write_doc` creates a page or replaces a whole one. `edit_doc` replaces one passage of a page that already exists, and refuses a passage that is not there or that occurs more than once; it is the tool the [check pass](../spriggs/agent-harness.md#the-check-pass) corrects a claim with.
 
 ## Page frontmatter
 
@@ -52,7 +53,7 @@ Do not put dates, authors or commits in frontmatter.
 
 ### How covers is used
 
-Before a pull request run, Spriggs lists every tracked file under `docs/` except change entries. A page is marked as affected when one of its `covers` paths matches a changed file. A match is either the same path or a folder prefix of it. A trailing `/` or `/*` (or `/**`) on a cover is ignored, so `src/gate`, `src/gate/` and `src/gate/**` all match `src/gate/decide.ts`. The model gets the affected pages as a starting point. No model call is made to decide this.
+Before a pull request run, Spriggs lists every tracked file under `docs/` except change entries. A page is marked as affected when one of its `covers` paths matches a changed file. A match is either the same path or a folder prefix of it. A trailing `/` or `/*` (or `/**`) on a cover is ignored, so `src/gate`, `src/gate/` and `src/gate/**` all match `src/gate/decide.ts`. The model gets the affected pages as a starting point. After the run, the same matches pick the pages the [check pass](../spriggs/agent-harness.md#the-check-pass) reads back against the code, the closest match first, so a page that rests on the changed code is checked even when the run did not touch it. No model call is made to decide this.
 
 ## Links
 
@@ -110,13 +111,13 @@ How the fields are filled:
 
 - `kind` comes from the Conventional Commits type when there is one (`feat` gives `added`, `fix` gives `fixed`, `perf` gives `changed`, and `refactor`, `chore`, `ci`, `build`, `test`, `style`, `docs` give `internal`). The model may narrow `added` to `changed`. With no type, the model chooses; `unknown` becomes `changed`.
 - `breaking` is set when a title or commit subject has `!` after its type, or a line in the description or a commit body starts with `BREAKING CHANGE:` (or `BREAKING-CHANGE:`).
-- `docs` keeps only paths the run wrote or that already exist under `docs/`. A page the run deleted is left out.
+- `docs` lists the paths the model named that the run wrote or that already exist under `docs/`, plus every markdown page the run wrote. A page the [check pass](../spriggs/agent-harness.md#the-check-pass) corrected counts as written, so it joins the list even when the model did not name it. A page the run deleted is left out.
 - An `internal` change gets no entry, unless the model marks it as a large refactor.
 - In `--local` mode the entry is printed, not written.
 
 ## What the post-run check refuses
 
-After the model finishes, Spriggs checks every file it changed, including the pages it deleted. A file written back with its original content does not count, and a deleted file does count. The check fails when:
+After the model finishes, Spriggs checks every file it changed, including the pages it deleted and any page the [check pass](../spriggs/agent-harness.md#the-check-pass) corrected. A file written back with its original content does not count, and a deleted file does count. The check fails when:
 
 - a changed file is outside `docs/`, or under `docs/api/` or `docs/changes/`;
 - a markdown page has missing or invalid frontmatter;

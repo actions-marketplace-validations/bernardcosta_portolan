@@ -15,6 +15,7 @@ export type ToolName =
   | "read_file"
   | "read_diff"
   | "write_doc"
+  | "edit_doc"
   | "move_doc"
   | "delete_doc"
   | "finish";
@@ -41,7 +42,7 @@ export type ToolRuntime = {
   diffs: Map<string, string>;
   /** Files the model wrote, moved or deleted this run, with their content before the first change (null = did not exist). */
   originals: Map<string, string | null>;
-  /** When set, write_doc accepts only these paths (a checker corrects its own pages). */
+  /** When set, the doc tools accept only these paths (a checker corrects the pages of its batch). */
   writable?: Set<string> | undefined;
   finished?: FinishResult | undefined;
 };
@@ -157,6 +158,22 @@ export const TOOL_DEFS: ToolDef[] = [
         },
       },
       required: ["from", "to"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "edit_doc",
+    description:
+      "Replace one passage in an existing page under docs/. `find` must occur exactly once in the file; " +
+      "include enough of the surrounding text to make it unique. Sends only the change, not the whole page.",
+    schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "The page's path under docs/" },
+        find: { type: "string", description: "The exact text to replace, as it is in the file" },
+        replace: { type: "string", description: "The new text" },
+      },
+      required: ["path", "find", "replace"],
       additionalProperties: false,
     },
   },
@@ -354,6 +371,8 @@ export async function runTool(rt: ToolRuntime, name: string, input: unknown): Pr
     }
     case "write_doc":
       return writeDoc(rt, field(input, "path"), field(input, "content"));
+    case "edit_doc":
+      return editDoc(rt, field(input, "path"), field(input, "find"), field(input, "replace"));
     case "move_doc":
       return moveDoc(rt, field(input, "from"), field(input, "to"));
     case "delete_doc":
@@ -421,6 +440,29 @@ async function writeDoc(rt: ToolRuntime, rawPath: unknown, content: unknown): Pr
   mkdirSync(dirname(abs), { recursive: true });
   await Bun.write(abs, content);
   return ok(`wrote ${path}`);
+}
+
+/** One passage of an existing page replaced in place. The result goes through write_doc, so one path writes. */
+async function editDoc(
+  rt: ToolRuntime,
+  rawPath: unknown,
+  find: unknown,
+  replace: unknown,
+): Promise<ToolResult> {
+  const path = safeRel(rawPath);
+  const bad = docsPathError(rt, path);
+  if (bad || !path) return err(bad ?? "invalid path");
+  if (typeof find !== "string" || typeof replace !== "string")
+    return err("find and replace must be strings");
+  if (!find) return err("find must not be empty");
+  const abs = join(rt.cwd, path);
+  if (!existsSync(abs) || !readableFile(rt.cwd, path)) return err(`${path} does not exist`);
+  const text = await Bun.file(abs).text();
+  const first = text.indexOf(find);
+  if (first < 0) return err("find does not occur in the file; copy the text exactly as it is");
+  if (text.indexOf(find, first + find.length) >= 0)
+    return err("find occurs more than once; include more of the surrounding text");
+  return writeDoc(rt, path, text.slice(0, first) + replace + text.slice(first + find.length));
 }
 
 /** An existing regular file under docs/ that the model may move or delete. */

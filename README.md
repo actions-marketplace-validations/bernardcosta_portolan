@@ -82,6 +82,20 @@ With only an Anthropic key set, the default is `anthropic/claude-opus-5-5`. For 
 
 You pay your provider directly. Spriggs reads as much of a change as it needs to get the docs right, so a capable model gives better docs. A cheaper model costs less.
 
+### What a run costs
+
+Measured on this repository in October 2026. Most input is served from the provider's prompt cache, which is the cheap part. Your numbers will differ with the size of the change, the size of your docs and the model.
+
+| Run | Tokens | Sonnet 5.5 | DeepSeek V4.1 Flash |
+| --- | --- | --- | --- |
+| Pull request, 281 changed lines in 5 files: the docs agent | 1.5M input (1.45M cached), 50k output, 26 turns | about $0.90 | about $0.25 |
+| The same pull request: the check pass (`SPRIGGS_EFFORT=high`) | 6.3M input (5.9M cached), 280k output, 68 turns | about $4.80 | about $1.10 |
+| Survey of this repository: the survey agent, without its check pass | 830k input (755k cached), 19k output, 17 turns | about $0.50 | about $0.15 |
+
+Prices used: Sonnet 5.5 at $2 per million input, $0.20 per million cached input and $10 per million output; DeepSeek V4.1 Flash through OpenRouter at $0.15 per million input and $0.60 per million output, with cached input counted at the full rate. Opus 5.5 is twice the Sonnet figures.
+
+The check pass is the expensive part: about five times the docs agent, because fresh agents read the code again for every claim. With a cheap model, leave it on. With an expensive model, set `SPRIGGS_EFFORT=low` to skip it, or accept the price of checked docs.
+
 ## Safety
 
 - The model has a small fixed set of tools and nothing else. It can list, search and read files, read the diff, and write, move or delete doc pages. It has no shell, no network access, and it never sees your GitHub token.
@@ -123,7 +137,14 @@ Every page starts with a short frontmatter block that has a one-line `summary`. 
 | `app-id`, `app-private-key` | empty | Run as your own GitHub App. |
 | `max-lines` | 5000 | Above this many changed lines, Spriggs asks you to split the pull request. |
 
-Other settings go under `env:` on the step. All of them are in [docs/reference/configuration.md](docs/reference/configuration.md).
+Other settings go under `env:` on the step. All of them are in [docs/reference/configuration.md](docs/reference/configuration.md). The one to know is `SPRIGGS_EFFORT`:
+
+| `SPRIGGS_EFFORT` | Does |
+| --- | --- |
+| `high` (default) | After the docs are written, a second set of agents reads them back against the code and corrects wrong claims. The survey gets its full budget. |
+| `low` | No check pass. The survey gets half the budget. Use it with an expensive model when cost matters more than the extra check. |
+
+The docs agent is not affected: it always reads the whole change. The check pass has its own budget, `SPRIGGS_CHECK_TOKENS`: by default three checkers per run, enough for about twelve pages of normal size. Raise it where a run may take longer than a CI job.
 
 ## Try it locally
 
