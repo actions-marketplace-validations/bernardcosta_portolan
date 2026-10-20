@@ -294,14 +294,16 @@ function renderRun(run: RunReport): string[] {
         ]
       : []),
   ];
-  // The checkers say in their own notes when every claim held, so the count line claims nothing more.
+  // The notes hold the corrections and the pages no checker finished; empty notes mean nothing to fix.
   const checked =
     run.checked === undefined
       ? []
       : [
           run.checkedPages
-            ? `I checked ${n(run.checkedPages)} page${run.checkedPages === 1 ? "" : "s"} against the code after the run.`
-            : "I could not check any page against the code after the run.",
+            ? run.checked
+              ? "After the run I checked these docs against the code. What I found:"
+              : "After the run I checked these docs against the code and found nothing to fix."
+            : "After the run I could not check the docs against the code.",
           ...(run.checked ? ["", noteText(run.checked)] : []),
           "",
         ];

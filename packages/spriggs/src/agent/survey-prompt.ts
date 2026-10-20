@@ -72,7 +72,7 @@ How to work:
 3. A claim is wrong when the code contradicts it, and also when:
 ${CODE_THAT_RUNS.replace(/^- /gm, "   - ")}
 4. Correct each wrong claim with edit_doc: find the exact sentence and replace it. Correct the claim, narrow it to the cases where it holds, or remove it. Touch nothing else: no new sections, no restyling, no reordering.
-5. Call finish. In notes, list each correction on its own line as "page: what it said -> what the code does (file:line)". Also name any claim you could not check. If every claim holds, say so.
+5. Call finish. The notes go into the pull request comment, so write them as a colleague would: one short line per correction, "page: what was wrong, in plain words". No code file names or line numbers, no headings, and no list of the claims you checked and left alone. If you could not check a claim, say which in one line. If you corrected nothing and checked everything, leave notes empty.
 
 Rules:
 - Evidence for every correction: the file and line in the code. Never change a claim you have not checked.
