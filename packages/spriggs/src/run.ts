@@ -210,7 +210,19 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     };
     try {
       if (ctx.event) {
-        entryPath = await writeEntry(cwd, entry);
+        const added = git(
+          [
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=A",
+            ...ctx.diffRevisions,
+            "--",
+            "docs/changes/",
+          ],
+          cwd,
+        ).split("\0");
+        entryPath = await writeEntry(cwd, entry, added);
       } else {
         // No pull request number in --local mode: show the entry, do not write a `pr: 0` file.
         console.log(
