@@ -91,6 +91,8 @@ Of the keys above, Spriggs reads two today: `name` and `issues.pattern`. The oth
 
 Spriggs writes one entry per pull request under `docs/changes/`. On a later run for the same pull request it rewrites the existing entry (it finds it by the `pr` field) instead of adding a new one.
 
+A person or a coding agent can also write the entry before the pull request exists. That entry has no `pr`. When the pull request's docs are current, Spriggs keeps the entry as it is (see [Docs already current](../spriggs/pull-request-run.md#docs-already-current)). When Spriggs makes a full run, and no entry has this pull request's number, it rewrites an entry without `pr` that the pull request added, and sets `pr`. An older entry without `pr` is never taken.
+
 File name: `YYYY-MM-DD-<slug>.md`. The slug is the title in lower case, accents removed, words joined by hyphens and cut at a word boundary near 50 characters. A cut slug does not end in a small word such as "the", "of" or "and". If that name is taken, `-<pr number>` is added.
 
 Frontmatter, in this order:
@@ -100,7 +102,7 @@ Frontmatter, in this order:
 | `title` | Required, not empty. |
 | `kind` | One of `added`, `changed`, `fixed`, `removed`, `deprecated`, `internal`. |
 | `breaking` | `true`, or left out. |
-| `pr` | The pull request number. |
+| `pr` | The pull request number. Left out when the entry was written before the pull request. |
 | `coverage` | `full` or `partial`. |
 | `reason` | Only when coverage is `partial`: `reason-missing` or `diff-too-large`. |
 | `docs` | A list of the doc paths the change touched. |
