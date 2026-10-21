@@ -100,7 +100,8 @@ export function currentEntry(base: string, head: string, cwd?: string): string |
     ],
     cwd,
   ).split("\n");
-  if (!sha || !entry) return undefined;
+  // The name goes into the PR comment: a plain file name only, anything else gets a full run.
+  if (!sha || !entry || !/^docs\/changes\/[\w.-]+\.md$/.test(entry)) return undefined;
   const codeAfter = git(
     ["log", "-1", "--format=%H", `${sha}..${head}`, "--", ".", ":(exclude)docs/"],
     cwd,
