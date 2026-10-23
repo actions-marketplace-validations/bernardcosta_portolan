@@ -51,7 +51,9 @@ export type RunReport =
       turns: number;
       coverage: Coverage;
     } & DebtReport)
-  | { kind: "failed"; reason: string; error?: string; usage?: Usage; model?: string };
+  | { kind: "failed"; reason: string; error?: string; usage?: Usage; model?: string }
+  /** The pull request already has current docs: no model run. `problems` from the checks. */
+  | { kind: "current"; entry: string; problems: string[] };
 
 /** The first line of the comment: the label people see, then what it means for this change. */
 export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport): string {
@@ -59,6 +61,12 @@ export function leadLine(label: Label, v: Verdict, s: Signals, run?: RunReport):
   if (run?.kind === "failed") {
     const error = run.error ? `\n\n${codeBlock(run.error)}\n\n` : " ";
     return `**docs:needs-input** — I could not update the docs. ${run.reason}${error}I committed nothing. Fix the cause and push, or edit the description, and I will run again.`;
+  }
+  if (run?.kind === "current") {
+    const lead = `The docs were updated in this pull request (\`${run.entry}\`). I ran no model and made no changes.`;
+    return run.problems.length
+      ? `**docs:needs-input** — ${lead} The checks found problems: fix them and push.`
+      : `**docs:done** — ${lead}`;
   }
   if (v.outcome === "abstain") {
     return v.reason === "too-large"
@@ -265,6 +273,11 @@ export function renderComment(
 
 function renderRun(run: RunReport): string[] {
   if (run.kind === "failed") return run.usage ? [usageLine(run.usage, run.model)] : [];
+  if (run.kind === "current") {
+    return run.problems.length
+      ? ["I checked the docs without a model. Fix these:", "", codeBlock(run.problems.join("\n"))]
+      : ["I checked the docs without a model and found nothing to fix."];
+  }
 
   const note = run.notes ? [`A note from the run: ${quiet(run.notes)}`, ""] : [];
   const missed = run.coverage.missed.length

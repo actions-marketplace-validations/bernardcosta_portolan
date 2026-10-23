@@ -1,11 +1,14 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { docsAgent } from "./agent/agents";
 import { type AgentResult, runAgent } from "./agent/loop";
 import { resolveProvider } from "./agent/model";
 import { buildUserMessage } from "./agent/prompt";
 import { ContextWindowError, type Provider, type Usage } from "./agent/providers/types";
-import { createRuntime, revertWrites } from "./agent/tools";
+import { createRuntime, readableFile, revertWrites } from "./agent/tools";
 import { deadLinks } from "./checks/links";
 import { unreadFiles } from "./checks/unread";
+import { splitFrontmatter, validateDoc, validateEntry } from "./docs/frontmatter";
 import { loadPortolanConfig } from "./docs/portolan";
 import { affectedDocs, docsIndex } from "./docs/tree";
 import { enforce } from "./enforce";
@@ -13,7 +16,7 @@ import { type Entry, renderEntry, writeEntry } from "./entry/writer";
 import type { Debt, Forge, Label, StatusState } from "./forge/types";
 import { decide, skipReason } from "./gate/decide";
 import { isGenerated, signals } from "./gate/signals";
-import { diffByFile, git } from "./git";
+import { currentEntry, diffByFile, git } from "./git";
 import { type Coverage, type RunReport, renderComment, statusLine } from "./report";
 import { loadPages, sum, verify } from "./verify";
 
@@ -67,6 +70,38 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     await forge.setStatus(...status);
     return 0;
   };
+
+  // Docs already updated in this PR (the Spriggs skill, or by hand): no model run, no commit.
+  let current: string | undefined;
+  try {
+    const entry = ctx.event ? currentEntry(ctx.base.sha, ctx.head.sha, cwd) : undefined;
+    // Only the author's entry counts: still a plain file at head, with no `pr`. Spriggs always
+    // writes `pr`, so its own entry gets a full run, and so does a renamed or deleted entry.
+    if (
+      entry &&
+      plainFile(cwd, entry) &&
+      splitFrontmatter(await Bun.file(join(cwd, entry)).text())?.data.pr === undefined
+    )
+      current = entry;
+  } catch (e) {
+    console.warn(`warning: could not check for current docs: ${(e as Error).message}`);
+  }
+  if (current) {
+    console.log(`current: ${current}`);
+    const problems = await checkCurrent(
+      cwd,
+      current,
+      ctx.files.map((f) => f.path),
+    );
+    const ok = problems.length === 0;
+    return report(
+      ok ? "docs:done" : "docs:needs-input",
+      ok
+        ? ["success", "done: docs updated in this pull request"]
+        : ["failure", "stopped: the docs in this pull request have problems"],
+      { kind: "current", entry: current, problems },
+    );
+  }
 
   if (verdict.outcome === "abstain") {
     return report("docs:needs-input", [blocking ? "failure" : "success", statusLine(verdict, s)]);
@@ -210,7 +245,19 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
     };
     try {
       if (ctx.event) {
-        entryPath = await writeEntry(cwd, entry);
+        const added = git(
+          [
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=A",
+            ...ctx.diffRevisions,
+            "--",
+            "docs/changes/",
+          ],
+          cwd,
+        ).split("\0");
+        entryPath = await writeEntry(cwd, entry, added);
       } else {
         // No pull request number in --local mode: show the entry, do not write a `pr: 0` file.
         console.log(
@@ -278,6 +325,32 @@ export async function run(forge: Forge, opts: RunOptions = {}): Promise<number> 
   };
   return report(partial ? "docs:partial" : "docs:done", status, runReport);
 }
+
+/** The checks that need no model, on the entry and the doc pages this pull request changed. */
+async function checkCurrent(cwd: string, entry: string, changed: string[]): Promise<string[]> {
+  const pages = changed.filter(
+    (p) =>
+      p.endsWith(".md") &&
+      p.startsWith("docs/") &&
+      !p.startsWith("docs/changes/") &&
+      !p.startsWith("docs/api/") &&
+      plainFile(cwd, p),
+  );
+  // The caller checked that the entry is a plain file.
+  const problems = validateEntry(await Bun.file(join(cwd, entry)).text()).map(
+    (e) => `${entry}: ${e}`,
+  );
+  for (const p of pages) {
+    for (const e of validateDoc(await Bun.file(join(cwd, p)).text())) problems.push(`${p}: ${e}`);
+  }
+  // deadLinks("run") checks links from or to the pages in originals: here, the changed pages.
+  const rt = createRuntime(cwd, new Map(), changed);
+  for (const p of pages) rt.originals.set(p, null);
+  return [...problems, ...deadLinks("run").run({ rt, seen: new Set() })];
+}
+
+/** Exists and is a plain file inside the repo: no symlink is read. */
+const plainFile = (cwd: string, p: string) => existsSync(join(cwd, p)) && readableFile(cwd, p);
 
 /** Commit titles are model output: one line, no control characters, at most 72 characters. */
 function oneLine(title: string): string {

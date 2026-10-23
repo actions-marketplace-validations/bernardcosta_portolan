@@ -28,7 +28,7 @@ covers:
 1. Clone the repo.
 2. Copy `.env.example` to `.env` and add one provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `OPENROUTER_API_KEY`). Set `SPRIGGS_MODEL` too, unless you only use Anthropic (see [Model](#model)). `.env` is gitignored.
 3. Install dependencies: `bun install`.
-4. Run the checks: `bun run check` and `bun run typecheck`. This runs Biome (lint and format) and `tsc`. The `ci` workflow (`.github/workflows/ci.yml`) runs the same two checks, after `bun install --frozen-lockfile`, on every pull request and on pushes to `main`.
+4. Run the checks: `bun run check`, `bun run typecheck` and `bun run test`. This runs Biome (lint and format), `tsc` and the Bun test suite. The `ci` workflow (`.github/workflows/ci.yml`) runs the same three checks, after `bun install --frozen-lockfile`, on every pull request and on pushes to `main`.
 
 ## Commands
 
@@ -36,6 +36,7 @@ covers:
 | --- | --- |
 | `bun run check` | Lint and format check (`biome ci .`) |
 | `bun run typecheck` | Typecheck (`tsc --noEmit -p packages/spriggs`) |
+| `bun run test` | Run the test suite (`bun --no-env-file test packages`), so no provider key from `.env` is loaded |
 | `bun run fix` | Apply Biome fixes |
 | `bun run spriggs run --local --base <ref>` | Run Spriggs on the working copy against `<ref>`, with no GitHub |
 | `bun run spriggs survey` | Check the docs of the whole repository against the code and fill the gaps (see [Survey](#survey-spriggs-survey)) |
@@ -134,7 +135,7 @@ If you use a GitHub App, you can also skip the job on the App's own pushes by ad
 
 This repository has three workflows:
 
-- `ci.yml` runs `bun run check` and `bun run typecheck` on pull requests and on pushes to `main`.
+- `ci.yml` runs `bun run check`, `bun run typecheck` and `bun run test` on pull requests and on pushes to `main`.
 - `spriggs.yml` uses the action from its own checkout (`uses: ./`). It runs on pull requests (opened, synchronize, reopened, edited), one run at a time per pull request, and by hand (`workflow_dispatch`) for the survey, one at a time. The job has a 60-minute timeout. It needs the repository secret `ANTHROPIC_API_KEY` and, optionally, the repository variable `SPRIGGS_MODEL`; an `openrouter/` model also needs the repository secret `OPENROUTER_API_KEY`. It uses the workflow's `GITHUB_TOKEN` with `contents`, `pull-requests` and `statuses` write permissions, unless the variables `SPRIGGS_APP_ID` and `SPRIGGS_APP_SLUG` and the secret `SPRIGGS_APP_PRIVATE_KEY` are set (see [Run as a GitHub App](#run-as-a-github-app-optional)). The job does not start for Spriggs's own pushes or for Dependabot pull requests: it is skipped when the actor is `github-actions[bot]`, `dependabot[bot]` or the App's bot, and the harness checks again.
 - `release.yml` runs on a `v*.*.*` tag. See [Release](#release).
 
@@ -189,4 +190,4 @@ The actions that `action.yml` and the workflows use are pinned to full commit SH
 
 ## Pull requests
 
-Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff of a change up to 1,500 lines, but marks the run `docs:partial` and asks for one. With no reason and a diff over 1,500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`. Any change over the line limit (5,000 by default) is also stopped, reason or not. When you push new commits that change the intent, update the description too, or write the reason in the commit messages.
+Fill in the **Why** section of the pull request template. The gate reads it; a description of 20 words or more also counts as a reason. Without a reason, Spriggs still updates the docs from the diff of a change up to 1,500 lines, but marks the run `docs:partial` and asks for one. With no reason and a diff over 1,500 changed lines, Spriggs abstains: it writes nothing and sets `docs:needs-input`. Any change over the line limit (5,000 by default) is also stopped, reason or not. When you push new commits that change the intent, update the description too: the gate counts a reason in the description only, so the reason has to be there, not in a commit message.

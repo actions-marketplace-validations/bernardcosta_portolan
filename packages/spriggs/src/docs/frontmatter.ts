@@ -53,7 +53,8 @@ export function validateEntry(text: string): string[] {
     errors.push(`entry: kind must be one of ${KINDS.join(", ")}`);
   if (d.breaking !== undefined && d.breaking !== true)
     errors.push("entry: breaking must be true or omitted");
-  if (typeof d.pr !== "number") errors.push("entry: pr must be a number");
+  if (d.pr !== undefined && typeof d.pr !== "number")
+    errors.push("entry: pr must be a number or omitted");
   if (!COVERAGES.includes(d.coverage as (typeof COVERAGES)[number]))
     errors.push("entry: coverage must be full or partial");
   if (d.coverage === "partial" && !REASONS.includes(d.reason as (typeof REASONS)[number])) {

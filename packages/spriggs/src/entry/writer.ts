@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { insideDocs } from "../agent/tools";
 import {
   type Frontmatter,
   renderFrontmatter,
@@ -46,18 +47,30 @@ function slugify(s: string): string {
   return kept.join("-") || "change";
 }
 
-/** One entry per pull request: rewrite an existing entry for this PR in place, else create one. */
-export async function writeEntry(cwd: string, entry: Entry, today = new Date()): Promise<string> {
+/**
+ * One entry per pull request: rewrite an existing entry for this PR in place, else create one.
+ * `added`: entry paths this PR added (`docs/changes/<file>`); one without `pr` is adopted.
+ */
+export async function writeEntry(
+  cwd: string,
+  entry: Entry,
+  added: string[] = [],
+  today = new Date(),
+): Promise<string> {
   const dir = join(cwd, "docs", "changes");
+  // `docs`, `docs/changes` or an entry may be a committed symlink: never write outside the repo.
+  if (!insideDocs(cwd, "docs/changes")) throw new Error("docs/changes resolves outside docs/");
   mkdirSync(dir, { recursive: true });
 
-  let path = await existingEntryFor(dir, entry.pr);
+  let path = await existingEntryFor(dir, entry.pr, added);
   if (!path) {
     const date = today.toISOString().slice(0, 10);
     const base = `${date}-${slugify(entry.title)}`;
     path = existsSync(join(dir, `${base}.md`)) ? `${base}-${entry.pr}.md` : `${base}.md`;
   }
 
+  if (!insideDocs(cwd, `docs/changes/${path}`))
+    throw new Error(`docs/changes/${path} resolves outside docs/`);
   await Bun.write(join(dir, path), renderEntry(entry));
   return `docs/changes/${path}`;
 }
@@ -76,10 +89,18 @@ export function renderEntry(entry: Entry): string {
   return text;
 }
 
-async function existingEntryFor(dir: string, pr: number): Promise<string | undefined> {
+async function existingEntryFor(
+  dir: string,
+  pr: number,
+  added: string[],
+): Promise<string | undefined> {
+  let local: string | undefined;
   for (const name of readdirSync(dir).filter((n) => n.endsWith(".md"))) {
     const fm = splitFrontmatter(await Bun.file(join(dir, name)).text());
     if (fm?.data.pr === pr) return name;
+    // An entry the Spriggs skill wrote locally has no pr. Only one added in this PR is ours.
+    if (!local && fm && fm.data.pr === undefined && added.includes(`docs/changes/${name}`))
+      local = name;
   }
-  return undefined;
+  return local;
 }
