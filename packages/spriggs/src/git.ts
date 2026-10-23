@@ -81,3 +81,30 @@ export function commitInfo(
     .split("\n");
   return { sha, authorEmail, subject };
 }
+
+/**
+ * The change entry the newest entry-adding commit in `base..head` added, when no code commit
+ * outside `docs/` comes after it: the docs are current. Needs full history.
+ */
+export function currentEntry(base: string, head: string, cwd?: string): string | undefined {
+  const [sha, , entry] = git(
+    [
+      "log",
+      "-1",
+      "--diff-filter=A",
+      "--format=%H",
+      "--name-only",
+      `${base}..${head}`,
+      "--",
+      "docs/changes/",
+    ],
+    cwd,
+  ).split("\n");
+  // The name goes into the PR comment: a plain file name only, anything else gets a full run.
+  if (!sha || !entry || !/^docs\/changes\/[\w.-]+\.md$/.test(entry)) return undefined;
+  const codeAfter = git(
+    ["log", "-1", "--format=%H", `${sha}..${head}`, "--", ".", ":(exclude)docs/"],
+    cwd,
+  );
+  return codeAfter.trim() ? undefined : entry;
+}

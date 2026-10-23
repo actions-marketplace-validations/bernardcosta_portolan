@@ -9,6 +9,7 @@
     "check": "biome ci .",
     "fix": "biome check --write .",
     "typecheck": "tsc --noEmit -p packages/spriggs",
+    "test": "bun --no-env-file test packages",
     "spriggs": "bun packages/spriggs/src/cli.ts"
   },
   "devDependencies": {
