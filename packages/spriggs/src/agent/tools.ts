@@ -257,10 +257,11 @@ export function readableFile(cwd: string, rel: string): boolean {
   return realpathSync(abs).startsWith(`${realpathSync(cwd)}/`);
 }
 
-/** The nearest existing ancestor must resolve (symlinks followed) inside the repo's docs/. */
-function insideDocs(cwd: string, rel: string): boolean {
+/** The nearest existing ancestor must resolve (symlinks followed) inside `<real repo root>/docs`. */
+export function insideDocs(cwd: string, rel: string): boolean {
   mkdirSync(resolve(cwd, "docs"), { recursive: true }); // a repo adopting Spriggs may have no docs/ yet
-  const docsReal = realpathSync(resolve(cwd, "docs"));
+  // Not realpath(docs): a committed `docs` symlink would move the boundary out of the repo.
+  const docsReal = join(realpathSync(cwd), "docs");
   let probe = resolve(cwd, rel);
   try {
     if (lstatSync(probe).isSymbolicLink()) return false; // also a dangling link

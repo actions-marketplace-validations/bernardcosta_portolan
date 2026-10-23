@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { insideDocs } from "../agent/tools";
 import {
   type Frontmatter,
   renderFrontmatter,
@@ -57,6 +58,8 @@ export async function writeEntry(
   today = new Date(),
 ): Promise<string> {
   const dir = join(cwd, "docs", "changes");
+  // `docs`, `docs/changes` or an entry may be a committed symlink: never write outside the repo.
+  if (!insideDocs(cwd, "docs/changes")) throw new Error("docs/changes resolves outside docs/");
   mkdirSync(dir, { recursive: true });
 
   let path = await existingEntryFor(dir, entry.pr, added);
@@ -66,6 +69,8 @@ export async function writeEntry(
     path = existsSync(join(dir, `${base}.md`)) ? `${base}-${entry.pr}.md` : `${base}.md`;
   }
 
+  if (!insideDocs(cwd, `docs/changes/${path}`))
+    throw new Error(`docs/changes/${path} resolves outside docs/`);
   await Bun.write(join(dir, path), renderEntry(entry));
   return `docs/changes/${path}`;
 }
