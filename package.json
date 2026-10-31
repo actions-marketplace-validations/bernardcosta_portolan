@@ -13,8 +13,8 @@
     "spriggs": "bun packages/spriggs/src/cli.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
-    "@types/bun": "^1.3.0",
+    "@biomejs/biome": "^2.6.2",
+    "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
   }
 }
